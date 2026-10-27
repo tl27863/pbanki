@@ -83,10 +83,19 @@ python3 scripts/emulator/serial.py 'uname -m'
 python3 scripts/emulator/serial.py 'wpa_cli -i eth0 status'
 ```
 
-To test with real cards, put a `collection.anki2` in
-`/mnt/ext1/applications/pbanki/collection/` inside the emulator (for example by
-temporarily serving it from the same HTTP server and using `wget` on the serial
-console). The app creates an empty collection on first launch.
+On first launch, `make emulator-dev` also installs
+`scripts/emulator/JLPT_N2_Grammar.apkg` into the emulator's collection. Reinstall
+or swap decks manually with:
+
+```bash
+make emulator-deck                              # install the bundled deck
+PBANKI_DECK_APKG=/path/to/other.apkg make emulator-deck
+PBANKI_REINSTALL_DECK=1 make emulator-deck      # replace an existing collection
+```
+
+The install replaces `collection.anki2` in the emulator and is skipped once the
+`.pbanki-deck` marker exists; quit pbAnki before running it. Only uncompressed
+Anki package collections (`collection.anki2`/`collection.anki21`) are supported.
 
 Overrides:
 

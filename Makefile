@@ -4,7 +4,7 @@ all:
 release:
 	cargo zigbuild --target armv7-unknown-linux-gnueabi.2.23 --profile release -p pbanki --features=sdk-6-8
 
-.PHONY: emulator-toolchain emulator-setup emulator-run emulator-build emulator-sync emulator-dev
+.PHONY: emulator-toolchain emulator-setup emulator-run emulator-build emulator-sync emulator-dev emulator-deck
 
 emulator-toolchain:
 	./scripts/emulator/install-toolchain.sh
@@ -23,3 +23,6 @@ emulator-build:
 
 emulator-sync:
 	./scripts/emulator/sync-app.sh
+
+emulator-deck:
+	./scripts/emulator/install-deck.sh
