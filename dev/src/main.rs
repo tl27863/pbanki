@@ -19,8 +19,9 @@ fn main() {
 
     let ui = MainWindow::new().unwrap();
     init_ui(&ui, &session, &config.borrow(), false);
-    wire_callbacks(&ui, session.clone(), config.clone());
-    maybe_auto_sync(&ui, session.clone(), config.clone());
+    let sync_hooks = SyncHooks::default();
+    wire_callbacks(&ui, session.clone(), config.clone(), sync_hooks.clone());
+    maybe_auto_sync(&ui, session.clone(), config.clone(), sync_hooks);
 
     let _ = ui.run();
 }
