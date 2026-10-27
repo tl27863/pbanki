@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use anki::scheduler::answering::CardAnswer;
 use anki::scheduler::states::SchedulingStates;
+use anki::services::SchedulerService;
 use anki::timestamp::{TimestampMillis, TimestampSecs};
 use anki::{collection::CollectionBuilder, prelude::I18n};
 
@@ -47,6 +48,10 @@ pub fn init_session(config: &crate::config::Config) -> Rc<LearnSession> {
             panic!("Cannot continue without a valid collection.");
         }
     };
+
+    if let Err(e) = col.upgrade_scheduler() {
+        eprintln!("Failed to upgrade scheduler: {:?}", e);
+    }
 
     let search = "note:\"Image Occlusion Enhanced\"";
 
@@ -247,7 +252,9 @@ pub fn rate_card(
         from_queue: true,
     };
 
-    let _ = session.collection.borrow_mut().answer_card(&mut answer);
+    if let Err(e) = session.collection.borrow_mut().answer_card(&mut answer) {
+        eprintln!("Failed to answer card {}: {:?}", card_id, e);
+    }
 
     next_card(session, deck, chars_per_page)
 }
