@@ -7,6 +7,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 mod keyboard;
+mod network;
 
 fn main() {
     let iv = Box::leak(Box::new(inkview::load())) as &'static _;
@@ -41,7 +42,11 @@ fn main() {
 
             let ui = Rc::new(MainWindow::new().unwrap());
             init_ui(&ui, &session, &config.borrow(), true);
-            wire_callbacks(&ui, session.clone(), config.clone());
+            let sync_hooks = SyncHooks {
+                before_sync: Some(Rc::new(move || network::ensure_connected(iv))),
+                after_sync: Some(Rc::new(move || network::disconnect_after_sync(iv))),
+            };
+            wire_callbacks(&ui, session.clone(), config.clone(), sync_hooks.clone());
 
             let (keyboard_tx, keyboard_rx) = std::sync::mpsc::channel::<(i32, String)>();
             let keyboard_timer = slint::Timer::default();
@@ -97,7 +102,7 @@ fn main() {
                 });
             }
 
-            maybe_auto_sync(&ui, session.clone(), config.clone());
+            maybe_auto_sync(&ui, session.clone(), config.clone(), sync_hooks);
 
             ui.run().unwrap();
         }

@@ -12,5 +12,5 @@ pub use api::{
     sync_state_from_status, update_deck_tree,
 };
 pub use config::Config;
-pub use frontend::{init_ui, maybe_auto_sync, wire_callbacks};
+pub use frontend::{SyncHooks, init_ui, maybe_auto_sync, wire_callbacks};
 pub use sync::{SyncAction, SyncManager, SyncResult, SyncStatus};
