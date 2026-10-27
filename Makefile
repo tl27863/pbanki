@@ -3,6 +3,11 @@ all:
 
 release:
 	cargo zigbuild --target armv7-unknown-linux-gnueabi.2.23 --profile release -p pbanki --features=sdk-6-8
+	mkdir -p target/pocketbook
+	cp target/armv7-unknown-linux-gnueabi/release/pbanki target/pocketbook/pbanki.bin
+	cp scripts/pocketbook/pbanki.app target/pocketbook/pbanki.app
+	chmod +x target/pocketbook/pbanki.app target/pocketbook/pbanki.bin
+	ls -lh target/pocketbook/pbanki.app target/pocketbook/pbanki.bin
 
 .PHONY: emulator-toolchain emulator-setup emulator-run emulator-build emulator-sync emulator-dev emulator-deck
 

@@ -1,11 +1,15 @@
 use common::*;
-
-use std::rc::Rc;
-
 use inkview::Event;
 
+use std::cell::RefCell;
+use std::os::raw::c_int;
+use std::rc::Rc;
+use std::time::Duration;
+
+mod keyboard;
+
 fn main() {
-    let iv = Box::leak(Box::new(inkview::load())) as &_;
+    let iv = Box::leak(Box::new(inkview::load())) as &'static _;
 
     let (evt_tx, evt_rx) = std::sync::mpsc::channel();
 
@@ -24,48 +28,76 @@ fn main() {
 
             let config_path = std::env::var("PBANKI_CONFIG")
                 .unwrap_or_else(|_| "/mnt/ext1/applications/pbanki/config.toml".to_string());
-            let config = Config::load_or_create(&config_path).unwrap_or_else(|e| {
-                eprintln!("Config error: {:?}, using defaults", e);
-                Config::default()
-            });
+            let config = Rc::new(RefCell::new(
+                Config::load_or_create(&config_path).unwrap_or_else(|e| {
+                    eprintln!("Config error: {:?}, using defaults", e);
+                    let mut cfg = Config::default();
+                    cfg.path = config_path.into();
+                    cfg
+                }),
+            ));
 
-            let session = init_session(&config);
-            let translations = init_translations(&session);
+            let session = init_session(&config.borrow());
 
             let ui = Rc::new(MainWindow::new().unwrap());
+            init_ui(&ui, &session, &config.borrow(), true);
+            wire_callbacks(&ui, session.clone(), config.clone());
 
-            let session_for_deck_tree = session.clone();
-            let ui_weak_for_deck_tree = ui.as_weak();
-            ui.on_update_deck_tree(move || {
-                let deck_tree = update_deck_tree(&session_for_deck_tree);
-                if let Some(ui) = ui_weak_for_deck_tree.upgrade() {
-                    ui.set_deck_tree(deck_tree);
-                }
-            });
+            let (keyboard_tx, keyboard_rx) = std::sync::mpsc::channel::<(i32, String)>();
+            let keyboard_timer = slint::Timer::default();
+            {
+                let ui_weak = ui.as_weak();
+                keyboard_timer.start(
+                    slint::TimerMode::Repeated,
+                    Duration::from_millis(100),
+                    move || {
+                        while let Ok((field, text)) = keyboard_rx.try_recv() {
+                            if let Some(ui) = ui_weak.upgrade() {
+                                let mut settings = ui.get_sync_settings();
+                                match field {
+                                    keyboard::FIELD_ENDPOINT => settings.endpoint = text.into(),
+                                    keyboard::FIELD_USERNAME => settings.username = text.into(),
+                                    keyboard::FIELD_PASSWORD => settings.password = text.into(),
+                                    _ => {}
+                                }
+                                ui.set_sync_settings(settings);
+                            }
+                        }
+                    },
+                );
+            }
 
-            let session_for_rate = session.clone();
-            let ui_weak_for_rate = ui.as_weak();
+            {
+                let ui_weak = ui.as_weak();
+                ui.on_edit_field(move |field, current| {
+                    let title = if let Some(ui) = ui_weak.upgrade() {
+                        let tr = ui.get_tr();
+                        match field {
+                            keyboard::FIELD_ENDPOINT => tr.server_url.to_string(),
+                            keyboard::FIELD_USERNAME => tr.email.to_string(),
+                            keyboard::FIELD_PASSWORD => tr.password.to_string(),
+                            _ => "Enter text".into(),
+                        }
+                    } else {
+                        "Enter text".into()
+                    };
+                    let flags = match field {
+                        keyboard::FIELD_ENDPOINT => inkview::bindings::KBD_URL as c_int,
+                        keyboard::FIELD_PASSWORD => inkview::bindings::KBD_PASSWORD as c_int,
+                        _ => inkview::bindings::KBD_NORMAL as c_int,
+                    };
+                    keyboard::open(
+                        iv,
+                        field,
+                        &title,
+                        current.as_str(),
+                        flags,
+                        keyboard_tx.clone(),
+                    );
+                });
+            }
 
-            ui.on_rate(move |rating, deck, chars_per_page| {
-                let next = rate_card(&session_for_rate, rating, deck, chars_per_page);
-                if let Some(ui) = ui_weak_for_rate.upgrade() {
-                    ui.set_current_card(next);
-                }
-            });
-
-            let session_for_deck = session.clone();
-            let ui_weak_for_deck = ui.as_weak();
-
-            ui.on_deck_clicked(move |deck, chars_per_page| {
-                let next = next_card(&session_for_deck, deck, chars_per_page);
-                if let Some(ui) = ui_weak_for_deck.upgrade() {
-                    ui.set_current_card(next);
-                }
-            });
-
-            ui.set_tr(translations);
-
-            ui.set_deck_tree(update_deck_tree(&session));
+            maybe_auto_sync(&ui, session.clone(), config.clone());
 
             ui.run().unwrap();
         }

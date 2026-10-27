@@ -1,50 +1,26 @@
 use common::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 fn main() {
-    let config = Config::load_or_create("./pbanki/config.toml").unwrap_or_else(|e| {
+    let config_path = "./pbanki/config.toml";
+    let mut config = Config::load_or_create(config_path).unwrap_or_else(|e| {
         eprintln!("Config error: {:?}, using defaults", e);
         let mut cfg = Config::default();
-        cfg.general.collection_path = "./pbanki/collection".into();
+        cfg.path = config_path.into();
         cfg
     });
+    if config.general.collection_path == "/mnt/ext1/applications/pbanki/collection" {
+        config.general.collection_path = "./pbanki/collection".into();
+    }
+    let config = Rc::new(RefCell::new(config));
 
-    let session = init_session(&config);
-    let translations = init_translations(&session);
+    let session = init_session(&config.borrow());
 
     let ui = MainWindow::new().unwrap();
-
-    let session_for_deck_tree = session.clone();
-    let ui_weak_for_deck_tree = ui.as_weak();
-    ui.on_update_deck_tree(move || {
-        let deck_tree = update_deck_tree(&session_for_deck_tree);
-        if let Some(ui) = ui_weak_for_deck_tree.upgrade() {
-            ui.set_deck_tree(deck_tree);
-        }
-    });
-
-    let session_for_rate = session.clone();
-    let ui_weak_for_rate = ui.as_weak();
-
-    ui.on_rate(move |rating, deck, chars_per_page| {
-        let next = rate_card(&session_for_rate, rating, deck, chars_per_page);
-        if let Some(ui) = ui_weak_for_rate.upgrade() {
-            ui.set_current_card(next);
-        }
-    });
-
-    let session_for_deck = session.clone();
-    let ui_weak_for_deck = ui.as_weak();
-
-    ui.on_deck_clicked(move |deck, chars_per_page| {
-        let next = next_card(&session_for_deck, deck, chars_per_page);
-        if let Some(ui) = ui_weak_for_deck.upgrade() {
-            ui.set_current_card(next);
-        }
-    });
-
-    ui.set_tr(translations);
-
-    ui.set_deck_tree(update_deck_tree(&session));
+    init_ui(&ui, &session, &config.borrow(), false);
+    wire_callbacks(&ui, session.clone(), config.clone());
+    maybe_auto_sync(&ui, session.clone(), config.clone());
 
     let _ = ui.run();
 }

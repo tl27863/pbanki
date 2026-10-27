@@ -1,7 +1,8 @@
 import { Constants, Translations } from "constants.slint";
-import { DeckNode, DeckTree, CardNode } from "types.slint";
+import { DeckNode, DeckTree, CardNode, SyncSettings, SyncState } from "types.slint";
 import { LearnScreen } from "screens/learn.slint";
 import { DeckSelectScreen } from "screens/deck_select.slint";
+import { SettingsScreen } from "screens/settings.slint";
 
 export component MainWindow inherits Window {
     preferred-width: 500px;
@@ -12,6 +13,11 @@ export component MainWindow inherits Window {
     in-out property <CardNode> current_card;
 
     in-out property <DeckTree> deck_tree;
+    in-out property <bool> settings_open;
+    in-out property <SyncSettings> sync_settings;
+    in-out property <SyncState> sync_state;
+    in property <bool> native_keyboard: false;
+
     in property <string> dummy: "ÄÖÜäöüßÀÂÆÇÈÉÊËÎÏÔŒÙÛàâæçèéêëîïôœùû„“”‘’—–@&$%+=¡¿¢£$¥€²³¼½¬¤¦§©®™°";
 
     property <length> available-content-height: root.height - 3 * Constants.font_size_content - 2 * Constants.padding_standard - 100px;
@@ -22,16 +28,54 @@ export component MainWindow inherits Window {
     callback update_deck_tree();
     callback deck_clicked(deck: DeckNode, chars-per-page: int);
     callback rate(rating: int, deck: DeckNode, chars-per-page: int);
+    callback open_settings();
+    callback save_settings(settings: SyncSettings);
+    callback sync_now();
+    callback full_sync(upload: bool);
+    callback settings_back();
+    callback edit_field(field: int, current: string);
+    callback session_ended();
 
-    VerticalLayout {
+    if settings_open: SettingsScreen {
+        width: 100%;
+        height: 100%;
+        tr: tr;
+        settings <=> sync_settings;
+        sync_state: sync_state;
+        native-keyboard: native_keyboard;
+        back => {
+            settings_back();
+        }
+        save(settings) => {
+            save_settings(settings);
+        }
+        sync-now => {
+            sync_now();
+        }
+        full-sync(upload) => {
+            full_sync(upload);
+        }
+        edit-field(field, current) => {
+            edit_field(field, current);
+        }
+    }
+
+    if !settings_open: VerticalLayout {
         padding: Constants.padding_standard;
         if !learning: DeckSelectScreen {
             tr: tr;
             due_total: deck_tree.due_total;
             deck_nodes: deck_tree.deck_nodes;
+            sync_state: sync_state;
             deck_clicked(deck) => {
                 deck_clicked(deck, chars-per-page);
                 learning = true;
+            }
+            settings_clicked => {
+                open_settings();
+            }
+            sync_clicked => {
+                sync_now();
             }
         }
         if learning: LearnScreen {
@@ -40,6 +84,7 @@ export component MainWindow inherits Window {
             home_clicked => {
                 update_deck_tree();
                 learning = false;
+                session_ended();
             }
             rate(rating) => {
                 rate(rating, current_card.deck, chars-per-page);

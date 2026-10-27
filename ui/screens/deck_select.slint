@@ -6,6 +6,10 @@ import { DeckNode, SyncState } from "../types.slint";
 component Menu {
     in property <Translations> tr;
     in property <int> due;
+    in property <SyncState> sync_state;
+
+    callback settings_clicked();
+    callback sync_clicked();
 
     HorizontalLayout {
         VerticalLayout {
@@ -22,16 +26,37 @@ component Menu {
                 text: due + tr.cards_due_suffix;
                 font-family: Constants.font_family_standard;
             }
+
+            if sync_state.status_message != "": Text {
+                text: sync_state.status_message;
+                font-family: Constants.font_family_standard;
+                font-size: Constants.font_size_subcontent;
+                color: sync_state.has_error ? #CC0000 : (sync_state.has_warning ? #B36B00 : #606060);
+                wrap: TextWrap.word-wrap;
+            }
         }
 
         HorizontalLayout {
             alignment: end;
+            spacing: Constants.spacing_medium;
+
             TouchArea {
                 Image {
                     source: @image-url("../icons/reload.svg");
                 }
 
                 clicked => {
+                    sync_clicked();
+                }
+            }
+
+            TouchArea {
+                Image {
+                    source: @image-url("../icons/settings.svg");
+                }
+
+                clicked => {
+                    settings_clicked();
                 }
             }
         }
@@ -41,14 +66,24 @@ component Menu {
 export component DeckSelectScreen {
     in property <Translations> tr;
     in property <int> due_total;
+    in property <SyncState> sync_state;
     in-out property <[DeckNode]> deck_nodes;
 
     callback deck_clicked(deck: DeckNode);
+    callback settings_clicked();
+    callback sync_clicked();
 
     VerticalLayout {
         Menu {
             due: due_total;
             tr: tr;
+            sync_state: sync_state;
+            settings_clicked => {
+                settings_clicked();
+            }
+            sync_clicked => {
+                sync_clicked();
+            }
         }
 
         ListView {

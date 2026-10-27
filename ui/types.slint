@@ -23,8 +23,21 @@ export struct CardNode {
 	durations: [string],
 }
 
+export struct SyncSettings {
+    endpoint: string,
+    username: string,
+    password: string,
+    auto_sync: bool,
+    sync_on_exit: bool,
+    sync_media: bool,
+}
+
 export struct SyncState {
-	is_syncing: bool,
-	status_message: string,
-	has_error: bool,
+    is_syncing: bool,
+    status_message: string,
+    has_error: bool,
+    has_warning: bool,
+    full_sync_required: bool,
+    can_upload: bool,
+    can_download: bool,
 }
