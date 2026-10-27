@@ -110,10 +110,30 @@ Bluetooth or audio. The `src/main.rs` config path can be overridden with
 
 ## Installation
 
-1. Copy binary to device: `/mnt/ext1/applications/pbanki.app`
-2. Copy your Anki collection to: `/mnt/ext1/applications/pbanki/collection/`
-3. (Optional) Create configuration file at: `/mnt/ext1/applications/pbanki/config.toml`
-4. Launch from Applications menu
+Build the release bundle with `make release`. It creates:
+
+```text
+target/pocketbook/pbanki.app   # shell launcher
+target/pocketbook/pbanki.bin   # ARM executable
+```
+
+1. Copy both files to `/mnt/ext1/applications/` keeping their names
+2. Make both executable: `chmod +x /mnt/ext1/applications/pbanki.app /mnt/ext1/applications/pbanki.bin`
+3. Copy your Anki collection to: `/mnt/ext1/applications/pbanki/collection/`
+4. (Optional) Create configuration file at: `/mnt/ext1/applications/pbanki/config.toml`
+5. Launch from Applications menu
+
+`pbanki.app` is a shell launcher, matching KOReader's PocketBook packaging. It
+sets `GLIBC_TUNABLES=glibc.rtld.execstack=2`, required by firmware 6.11.1480+
+when loading InkView libraries, and writes stdout/stderr to
+`/mnt/ext1/applications/pbanki.log`.
+
+### Importing decks
+
+Place an `.apkg` file in `/mnt/ext1/applications/pbanki/collection/` and restart
+pbAnki. On startup, any unimported `*.apkg` in that folder is imported with its
+scheduling and media, then renamed to `*.apkg.imported` so it is not imported
+again. No need to extract the package.
 
 ## Configuration
 
@@ -144,12 +164,37 @@ password = ""
 # This avoids storing password long-term
 token = ""
 
+# Optional self-hosted sync server URL. Leave empty to use AnkiWeb.
+# Example: endpoint = "http://127.0.0.1:27701/"
+endpoint = ""
+
 # Sync automatically on app start
 auto_sync = false
 
-# Sync automatically after session ends
+# Sync automatically after a study session ends
 sync_on_exit = false
+
+# Synchronize media files (audio/images) as well as the collection
+sync_media = true
 ```
+
+## Syncing
+
+Open the gear button on the home screen to configure sync. The settings page
+supports AnkiWeb or a self-hosted sync server, credentials, automatic sync,
+sync-after-study, and media sync.
+
+- The reload button on the home screen and **Sync now** in settings both start a
+  sync immediately.
+- If the server and local collection cannot be merged, the settings page shows
+  Upload/Download options. Both directions require an explicit confirmation.
+- `sync_on_exit` means after leaving a study session, not when the app exits.
+- Media sync defaults to on and stores media in `collection.media`.
+- Sync runs synchronously; the UI is blocked until the current sync finishes.
+
+For local development, the companion server project at `../pbanki-sync-server`
+uses `http://127.0.0.1:27701/` (desktop) or `http://10.0.2.2:27701/` (PB700
+emulator) with the dev credentials from that project's `.env`.
 
 ### Supported Languages
 
@@ -180,10 +225,12 @@ ui/       # Slint UI components (shared)
 - Support for type-in cards (`[[type:Back]]`)
 - Multi-language support via Anki's i18n system (70+ languages)
 - Configurable collection path and language settings
+- AnkiWeb or self-hosted sync, including full upload/download and media sync
+- Settings page with sync options and automatic sync
 
 ## TODOs
 
-- [ ] **AnkiWeb Sync** - Implement synchronization with AnkiWeb
+- [ ] **Sync progress and abort** - Add background progress reporting and cancellation
 - [ ] **MathJax Rendering** - Add support for LaTeX/MathJax formulas in cards
 - [ ] **Image Support** - Display images embedded in cards from media folder
 - [ ] **UI Polishing** - Improve e-ink optimized interface and user experience

@@ -65,3 +65,6 @@ target
 # Python bytecode
 __pycache__/
 *.pyc
+
+# PocketBook launcher template
+!scripts/pocketbook/pbanki.app
