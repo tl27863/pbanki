@@ -22,11 +22,12 @@ fn main() {
 
             slint::platform::set_platform(Box::new(display)).unwrap();
 
-            let config = Config::load_or_create("/mnt/ext1/applications/pbanki/config.toml")
-                .unwrap_or_else(|e| {
-                    eprintln!("Config error: {:?}, using defaults", e);
-                    Config::default()
-                });
+            let config_path = std::env::var("PBANKI_CONFIG")
+                .unwrap_or_else(|_| "/mnt/ext1/applications/pbanki/config.toml".to_string());
+            let config = Config::load_or_create(&config_path).unwrap_or_else(|e| {
+                eprintln!("Config error: {:?}, using defaults", e);
+                Config::default()
+            });
 
             let session = init_session(&config);
             let translations = init_translations(&session);
