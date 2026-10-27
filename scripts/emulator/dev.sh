@@ -65,6 +65,9 @@ if ! PBANKI_SKIP_BUILD=1 "$ROOT/scripts/emulator/sync-app.sh"; then
     exit 1
 fi
 
+echo "installing deck..."
+"$ROOT/scripts/emulator/install-deck.sh" || echo "warning: deck install failed" >&2
+
 echo "launching pbAnki..."
 python3 "$ROOT/scripts/emulator/launch-app.py" \
     --emulator-dir "$EMU_DIR" \
