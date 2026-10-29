@@ -62,6 +62,9 @@ component Menu {
 export component LearnScreen {
     in property <Translations> tr;
     in property <CardNode> card;
+    in property <string> card_font: "Ryo Gothic PlusN";
+    in property <bool> loading: false;
+    in property <string> loading_message: "Loading...";
     in-out property <bool> show_answer;
     property <bool> valid_deck: card.id != (-1 * 1ms) && card.answer != [];
     property <[string]> pages: show_answer ? card.answer : card.question;
@@ -74,6 +77,11 @@ export component LearnScreen {
         }
     }
 
+    changed card => {
+        current-page = 0;
+        show_answer = false;
+    }
+
     callback home_clicked();
     callback rate(rating: int);
 
@@ -81,7 +89,7 @@ export component LearnScreen {
 
     focus-scope := FocusScope {
         key-pressed(event) => {
-            if valid_deck {
+            if valid_deck && !loading {
                 if current-page > 0 && (event.text == Key.LeftArrow || event.text == Key.DownArrow || event.text == Key.PageDown) {
                     current-page -= 1;
                     accept
@@ -94,17 +102,14 @@ export component LearnScreen {
                 } else if show_answer && (current-page == total-pages - 1 || current-page == 0) {
                     if event.text == Key.LeftArrow || event.text == Key.DownArrow || event.text == Key.PageDown {
                         rate(0);
-                        show_answer = false;
 
                         accept
                     } else if event.text == Key.RightArrow || event.text == Key.Return {
                         rate(1);
-                        show_answer = false;
 
                         accept
                     } else if event.text == Key.Menu || event.text == Key.UpArrow || event.text == Key.PageUp {
                         rate(2);
-                        show_answer = false;
 
                         accept
                     }
@@ -114,7 +119,21 @@ export component LearnScreen {
         }
 
         VerticalLayout {
-            VerticalLayout {
+            if loading: VerticalLayout {
+                vertical-stretch: 1;
+                alignment: center;
+
+                Text {
+                    text: loading_message;
+                    font-family: Constants.font_family_standard;
+                    font-size: Constants.font_size_content;
+                    wrap: TextWrap.word-wrap;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            if !loading: VerticalLayout {
                 alignment: start;
                 Menu {
                     card: card;
@@ -141,7 +160,7 @@ export component LearnScreen {
                     VerticalLayout {
                         Text {
                             text: (current-page < pages.length ? pages[current-page] : "") + (pages.length > 1 ? "\n\n[" + (current-page + 1) + "/" + total-pages + "]" : "");
-                            font-family: Constants.font_family_standard;
+                            font-family: card_font;
                             font-size: Constants.font_size_content;
                             wrap: TextWrap.word-wrap;
                             overflow: TextOverflow.clip;
@@ -152,7 +171,7 @@ export component LearnScreen {
                 }
             }
 
-            if valid_deck: VerticalLayout {
+            if !loading && valid_deck: VerticalLayout {
                 alignment: end;
                 HorizontalLayout {
                     alignment: center;
@@ -177,7 +196,6 @@ export component LearnScreen {
 
                             clicked => {
                                 rate(rating);
-                                show_answer = false;
                             }
                         }
                     }

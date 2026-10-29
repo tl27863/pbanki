@@ -11,12 +11,19 @@ export component MainWindow inherits Window {
 
     in-out property <bool> learning;
     in-out property <CardNode> current_card;
+    // True from the moment a card job or sync starts until it finishes. Unlike
+    // `loading`, this is set immediately and is never deferred, so navigation
+    // can be guarded while a card job owns the collection or a sync is running.
+    in-out property <bool> busy: false;
+    in-out property <bool> loading: false;
+    in-out property <string> loading_message: "Loading...";
 
     in-out property <DeckTree> deck_tree;
     in-out property <bool> settings_open;
     in-out property <SyncSettings> sync_settings;
     in-out property <SyncState> sync_state;
     in property <bool> native_keyboard: false;
+    in property <string> card_font: "Ryo Gothic PlusN";
 
     in property <string> dummy: "ÄÖÜäöüßÀÂÆÇÈÉÊËÎÏÔŒÙÛàâæçèéêëîïôœùû„“”‘’—–@&$%+=¡¿¢£$¥€²³¼½¬¤¦§©®™°";
 
@@ -68,8 +75,10 @@ export component MainWindow inherits Window {
             deck_nodes: deck_tree.deck_nodes;
             sync_state: sync_state;
             deck_clicked(deck) => {
-                deck_clicked(deck, chars-per-page);
-                learning = true;
+                if !busy {
+                    deck_clicked(deck, chars-per-page);
+                    learning = true;
+                }
             }
             settings_clicked => {
                 open_settings();
@@ -81,10 +90,15 @@ export component MainWindow inherits Window {
         if learning: LearnScreen {
             tr: tr;
             card: current_card;
+            card_font: card_font;
+            loading: loading;
+            loading_message: loading_message;
             home_clicked => {
-                update_deck_tree();
-                learning = false;
-                session_ended();
+                if !busy {
+                    update_deck_tree();
+                    learning = false;
+                    session_ended();
+                }
             }
             rate(rating) => {
                 rate(rating, current_card.deck, chars-per-page);
