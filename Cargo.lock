@@ -1301,6 +1301,9 @@ version = "0.1.0"
 dependencies = [
  "anki",
  "anki_proto",
+ "fontdue",
+ "fontique",
+ "libc",
  "reqwest",
  "serde",
  "slint",
@@ -2539,8 +2542,6 @@ dependencies = [
 [[package]]
 name = "fontdue"
 version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e57e16b3fe8ff4364c0661fdaac543fb38b29ea9bc9c2f45612d90adf931d2b"
 dependencies = [
  "hashbrown 0.15.5",
  "rayon",
@@ -3133,7 +3134,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 1.0.69",
- "windows 0.58.0",
+ "windows 0.57.0",
 ]
 
 [[package]]
@@ -3627,7 +3628,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -3822,7 +3823,7 @@ checksum = "a257582fdcde896fd96463bf2d40eefea0580021c0712a0e2b028b60b47a837a"
 [[package]]
 name = "inkview"
 version = "0.1.1"
-source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-eink-refresh#024b731bf1279bfa4766495a27d032f3b69f24dc"
+source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-eink-refresh#80b6a1fa9802d75a7bc75caa7b3493afb6ffe027"
 dependencies = [
  "libloading",
  "num-derive",
@@ -3833,7 +3834,7 @@ dependencies = [
 [[package]]
 name = "inkview-slint"
 version = "0.1.2"
-source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-eink-refresh#024b731bf1279bfa4766495a27d032f3b69f24dc"
+source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-eink-refresh#80b6a1fa9802d75a7bc75caa7b3493afb6ffe027"
 dependencies = [
  "euclid",
  "inkview",
@@ -5821,7 +5822,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.10",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

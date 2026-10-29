@@ -66,5 +66,8 @@ target
 __pycache__/
 *.pyc
 
+# Device log copied from the PocketBook for debugging
+pbanki.log
+
 # PocketBook launcher template
 !scripts/pocketbook/pbanki.app

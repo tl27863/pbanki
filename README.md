@@ -23,8 +23,9 @@ Place your Anki collection at `./pbanki/collection/`
 ### PocketBook
 
 ```bash
-make          # debug build
-make release  # release build
+make                  # debug build
+make release          # release build
+make release-profile  # release build with [profile] timing logs
 ```
 
 Requires: `cargo-zigbuild` and `zig`. The InkView dependencies come from the
@@ -125,21 +126,33 @@ target/pocketbook/pbanki.bin   # ARM executable
 4. (Optional) Create configuration file at: `/mnt/ext1/applications/pbanki/config.toml`
 5. Launch from Applications menu
 
+If pbAnki is already running, close it from the task manager before replacing
+either file. `/mnt/ext1` is FAT, and overwriting a running executable can
+terminate it with `SIGBUS`. Launching pbAnki while it is already open just
+brings the existing window to the front.
+
 `pbanki.app` is a shell launcher, matching KOReader's PocketBook packaging. It
 sets `GLIBC_TUNABLES=glibc.rtld.execstack=2`, required by firmware 6.11.1480+
 when loading InkView libraries, and writes stdout/stderr to
-`/mnt/ext1/applications/pbanki.log`.
+`/mnt/ext1/applications/pbanki/logs/pbanki.log`. It creates the `pbanki/logs/`
+folder if it does not exist. The launcher keeps a single instance via
+`/tmp/pbanki.pid`, rotates the log at launch when it exceeds 1 MiB, and records
+the start and exit status. If the application directory is not writable, it
+falls back to `/tmp/pbanki.log`. It changes into its own directory (normally
+`/mnt/ext1/applications`) before starting the binary, so relative
+`collection_path` values resolve there.
 
 ### Importing decks
 
-Place an `.apkg` file in `/mnt/ext1/applications/pbanki/collection/` and restart
-pbAnki. On startup, any unimported `*.apkg` in that folder is imported with its
-scheduling and media, then renamed to `*.apkg.imported` so it is not imported
-again. No need to extract the package.
+Place an `.apkg` file in `/mnt/ext1/applications/pbanki/collection/`, then close
+and relaunch pbAnki. Launching it while it is already open only brings the
+existing window forward. On startup, any unimported `*.apkg` in that folder is
+imported with its scheduling and media, then renamed to `*.apkg.imported` so it
+is not imported again. No need to extract the package.
 
 ## Configuration
 
-pbAnki uses a TOML configuration file. On first launch, a default config will be created at `/mnt/ext1/applications/pbanki/config.toml` (or `./pbanki/config.toml` for desktop builds).
+pbAnki uses a TOML configuration file. On first launch, a default config will be created at `/mnt/ext1/applications/pbanki/config.toml` (or `./pbanki/config.toml` for desktop builds). The file is read at startup; close and relaunch pbAnki after editing it.
 
 ### Configuration Options
 
@@ -248,10 +261,11 @@ pbAnki uses Anki's built-in translations, supporting 70+ languages including:
 ## Project Structure
 
 ```
-common/   # shared Rust logic: API, card jobs, fonts, sync, Slint build
-src/      # PocketBook build (uses the patched inkview-rs fork)
-dev/      # Desktop build (for development)
-ui/       # Slint UI components (shared, not a Cargo package)
+common/       # shared Rust logic: API, card jobs, fonts, sync, Slint build
+src/          # PocketBook build (uses the patched inkview-rs fork)
+dev/          # Desktop build (for development)
+ui/           # Slint UI components (shared, not a Cargo package)
+third_party/  # vendored fontdue 0.9.3 with lazy glyph loading (see PBANKI-PATCH.md)
 ```
 
 ## Current Features
@@ -263,10 +277,11 @@ ui/       # Slint UI components (shared, not a Cargo package)
 - Answer cards with Again/Hard/Good/Easy ratings
 - Display interval durations on rating buttons
 - Real-time deck count updates after answering
-- Asynchronous card loading with a blocking loading screen
+- Asynchronous card loading; a loading screen appears only for slow loads
 - Configurable card font and fallback chain with a missing-glyph guard
 - Japanese font support on PocketBook (Ryo Gothic PlusN by default)
-- E-ink refresh finalization fix for card and loading-screen transitions
+- E-ink presentation that needs no extra touch at launch, resume, or card changes
+- Fast first launch and first card with large CJK fonts (lazy glyph loading)
 - Support for type-in cards (`[[type:Back]]`)
 - Multi-language support via Anki's i18n system (70+ languages)
 - Configurable collection path and language settings

@@ -8,6 +8,10 @@ common = { path = "../common" }
 slint = { git = "https://github.com/slint-ui/slint", rev = "44208ff", default-features = false, features = ["compat-1-2", "std", "backend-winit", "software-renderer-systemfonts", "renderer-software"] }
 tokio = { version = "1", features = ["io-util"] }
 
+[features]
+default = []
+profile = ["common/profile"]
+
 # Lazy glyph outlines; see third_party/fontdue/PBANKI-PATCH.md.
 [patch.crates-io]
 fontdue = { path = "../third_party/fontdue" }

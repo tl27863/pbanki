@@ -12,6 +12,8 @@ use anki::services::SchedulerService;
 use anki::timestamp::{TimestampMillis, TimestampSecs};
 
 use crate::fonts::FontCatalog;
+use crate::profile::ProfileTimer;
+use crate::profile_log;
 use crate::{
     CardNode, DeckNode, DeckTree, SyncAction, SyncManager, SyncResult, SyncSettings, SyncState,
     SyncStatus, Translations,
@@ -271,18 +273,27 @@ pub fn next_card(
     set_deck: bool,
     fonts: &FontCatalog,
 ) -> Result<LoadedCard, String> {
+    let total_timer = ProfileTimer::start();
+    let set_deck_timer = ProfileTimer::start();
     if set_deck {
         col.set_current_deck(anki::decks::DeckId(deck_id))
             .map_err(|err| format!("could not open deck: {err}"))?;
     }
+    let set_deck_elapsed = set_deck_timer.elapsed();
 
+    let queue_timer = ProfileTimer::start();
     let queued_cards = col
         .get_queued_cards(1, false)
         .map_err(|err| format!("could not load the card queue: {err}"))?;
+    let queue_elapsed = queue_timer.elapsed();
     let new_count = queued_cards.new_count as i32;
     let learn_count = queued_cards.learning_count as i32;
     let due_count = queued_cards.review_count as i32;
     let Some(card) = queued_cards.cards.first() else {
+        profile_log!(
+            "next card empty: set_deck={set_deck_elapsed:?} queue={queue_elapsed:?} total={:?}",
+            total_timer.elapsed()
+        );
         return Ok(LoadedCard::no_cards(
             new_count,
             learn_count,
@@ -291,14 +302,19 @@ pub fn next_card(
         ));
     };
 
+    let states_timer = ProfileTimer::start();
     let durations = col
         .describe_next_states(&card.states)
         .unwrap_or_else(|_| vec![String::new(); 4]);
+    let states_elapsed = states_timer.elapsed();
 
+    let render_timer = ProfileTimer::start();
     let rendered = col
         .render_existing_card(card.card.id(), false, false)
         .map_err(|err| format!("could not render card: {err}"))?;
+    let render_elapsed = render_timer.elapsed();
 
+    let text_timer = ProfileTimer::start();
     let mut answer = anki::text::strip_html(rendered.answer().as_ref()).into_owned();
 
     // Handle special case for type in cards
@@ -330,7 +346,11 @@ pub fn next_card(
     let question_html = rendered.question().into_owned();
     let question_text = anki::text::strip_html(&question_html);
     let combined = format!("{question_text}{answer}");
+    let text_elapsed = text_timer.elapsed();
+
+    let font_timer = ProfileTimer::start();
     let font_choice = fonts.choose_font(&combined);
+    let font_elapsed = font_timer.elapsed();
     if !font_choice.missing.is_empty() {
         eprintln!(
             "[font] card {}: {} character(s) not covered by '{}': {:?}",
@@ -340,6 +360,7 @@ pub fn next_card(
             font_choice.missing
         );
     }
+    let pages_timer = ProfileTimer::start();
     let answer_text = fonts.sanitize(&answer, &font_choice.family);
 
     let chars_per_page = chars_per_page.max(1) as usize;
@@ -351,6 +372,15 @@ pub fn next_card(
             .map(|page| slint::SharedString::from(fonts.sanitize(&page, &font_choice.family)))
             .collect();
     let answer = crate::utils::paginate_text(&answer_text, chars_per_page);
+    let pages_elapsed = pages_timer.elapsed();
+    let total_elapsed = total_timer.elapsed();
+
+    profile_log!(
+        "card {} load: set_deck={set_deck_elapsed:?} queue={queue_elapsed:?} \
+         states={states_elapsed:?} render={render_elapsed:?} text={text_elapsed:?} \
+         font={font_elapsed:?} pages={pages_elapsed:?} total={total_elapsed:?}",
+        card.card.id().0
+    );
 
     Ok(LoadedCard {
         id: card.card.id().0,
@@ -409,8 +439,17 @@ pub fn rate_card(
         from_queue: true,
     };
 
-    if let Err(err) = col.answer_card(&mut answer) {
+    let answer_timer = ProfileTimer::start();
+    let answer_result = col.answer_card(&mut answer);
+    profile_log!(
+        "card {card_id} answer rating={rating}: {:?}",
+        answer_timer.elapsed()
+    );
+    if let Err(err) = answer_result {
+        // Loading the next card anyway would show the unchanged queue head as
+        // if it were new, silently dropping the rating.
         eprintln!("Failed to answer card {card_id}: {err:?}");
+        return Err(format!("could not save the rating: {err}"));
     }
 
     next_card(col, deck_id, chars_per_page, set_deck, fonts)
@@ -671,10 +710,21 @@ fn backup_collection(config: &crate::config::Config) -> Result<(), String> {
     Ok(())
 }
 
-fn reset_session_memory(session: &LearnSession) {
+/// Forgets the displayed card: its id, scheduling states, and display time.
+pub(crate) fn clear_current_card(session: &LearnSession) {
     *session.current_card.borrow_mut() = None;
     *session.states.borrow_mut() = None;
     *session.start_time.borrow_mut() = None;
+}
+
+/// Forgets the displayed card and the cached current deck, so the next deck
+/// entry calls `set_current_deck` again.
+///
+/// Call after anything that can change the collection's current deck behind
+/// the cache: every sync (a merge can pull another device's `curDeck` or
+/// delete the deck) and a failed card load.
+pub(crate) fn reset_session_memory(session: &LearnSession) {
+    clear_current_card(session);
     session.current_deck_id.set(None);
 }
 
@@ -801,3 +851,7 @@ pub fn sync_state_from_status(status: &SyncStatus) -> SyncState {
 pub fn get_sync_status(session: &LearnSession) -> SyncStatus {
     session.sync_manager.get_status()
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/api.rs"]
+mod tests;

@@ -1,0 +1,39 @@
+import { Palette } from "std-widgets.slint";
+
+// Button without pressed, hover, or animated styles. Each would be an e-ink
+// update that delays the screen change the tap causes (about 0.5 s for Show
+// Answer on the PB710); that change is the feedback.
+export component PlainButton {
+    in property <string> text;
+    in property <bool> enabled: true;
+    out property <bool> pressed: self.enabled && touch.pressed;
+    callback clicked <=> touch.clicked;
+    min-width: max(64px, layout.min-width);
+    min-height: max(64px, layout.min-height);
+
+    Rectangle {
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: Palette.border;
+        background: Palette.control-background;
+    }
+
+    layout := HorizontalLayout {
+        padding-left: 32px;
+        padding-right: 32px;
+        padding-top: 12px;
+        padding-bottom: 12px;
+        alignment: center;
+        Text {
+            text: root.text;
+            font-size: 14px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            color: Palette.foreground;
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+    }
+}

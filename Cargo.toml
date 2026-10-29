@@ -15,6 +15,7 @@ tokio = { version = "1", features = ["io-util"] }
 [features]
 default = []
 sdk-6-8 = ["inkview/sdk-6-8"]
+profile = ["common/profile"]
 
 [profile.release]
 opt-level = 3

@@ -45,16 +45,36 @@ fn main() {
                     }),
                 ));
 
+                let setup_timer = ProfileTimer::start();
                 let session = init_session(&config.borrow());
-                register_catalog_fonts(&session.font_catalog);
+                let session_elapsed = setup_timer.elapsed();
 
+                let fonts_timer = ProfileTimer::start();
+                register_catalog_fonts(&session.font_catalog);
+                let fonts_elapsed = fonts_timer.elapsed();
+                spawn_font_benchmark(&session.font_catalog, "Monospace");
+
+                let window_timer = ProfileTimer::start();
                 let ui = Rc::new(MainWindow::new().unwrap());
+                let window_elapsed = window_timer.elapsed();
+
+                let init_ui_timer = ProfileTimer::start();
                 init_ui(&ui, &session, &config.borrow(), true);
-                let sync_hooks = SyncHooks {
-                    before_sync: Some(Rc::new(move || network::ensure_connected(iv))),
-                    after_sync: Some(Rc::new(move || network::disconnect_after_sync(iv))),
+                profile_log!(
+                    "startup: init_session={session_elapsed:?} \
+                     register_fonts={fonts_elapsed:?} window={window_elapsed:?} \
+                     init_ui={:?} total={:?}",
+                    init_ui_timer.elapsed(),
+                    setup_timer.elapsed()
+                );
+                let hooks = FrontendHooks {
+                    sync: SyncHooks {
+                        before_sync: Some(Rc::new(move || network::ensure_connected(iv))),
+                        after_sync: Some(Rc::new(move || network::disconnect_after_sync(iv))),
+                    },
+                    full_present: Some(Rc::new(inkview_slint::request_full_present)),
                 };
-                wire_callbacks(&ui, session.clone(), config.clone(), sync_hooks.clone());
+                wire_callbacks(&ui, session.clone(), config.clone(), hooks.clone());
 
                 let (keyboard_tx, keyboard_rx) = std::sync::mpsc::channel::<(i32, String)>();
                 let keyboard_timer = slint::Timer::default();
@@ -110,7 +130,7 @@ fn main() {
                     });
                 }
 
-                maybe_auto_sync(&ui, session.clone(), config.clone(), sync_hooks);
+                maybe_auto_sync(&ui, session.clone(), config.clone(), hooks);
 
                 ui.run().unwrap();
             }
