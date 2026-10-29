@@ -9,15 +9,16 @@ export component RatingButton {
     callback clicked <=> touch.clicked;
     min-width: max(32px, layout.min-width);
     min-height: max(32px, layout.min-height);
+    // No pressed, hover, or animated styles: each would be an e-ink update
+    // that delays the next card (0.5-0.8 s on the PB710). The next card is the
+    // feedback.
     background := Rectangle {
         border-radius: 4px;
-        background: root.pressed ? Palette.control-background.darker(0.1) : touch.has-hover ? Palette.control-background.darker(0.05) : Palette.control-background;
-        animate background { duration: 150ms; }
+        background: Palette.control-background;
         border := Rectangle {
             border-radius: parent.border-radius;
             border-width: 1px;
-            border-color: root.pressed ? Palette.border.darker(0.2) : Palette.border;
-            animate border-color { duration: 150ms; }
+            border-color: Palette.border;
         }
 
         layout := VerticalLayout {

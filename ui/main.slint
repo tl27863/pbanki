@@ -75,9 +75,10 @@ export component MainWindow inherits Window {
             deck_nodes: deck_tree.deck_nodes;
             sync_state: sync_state;
             deck_clicked(deck) => {
+                // `learning` is set from Rust once the loading screen or the
+                // card is ready, so the previous card is never shown.
                 if !busy {
                     deck_clicked(deck, chars-per-page);
-                    learning = true;
                 }
             }
             settings_clicked => {
@@ -93,6 +94,7 @@ export component MainWindow inherits Window {
             card_font: card_font;
             loading: loading;
             loading_message: loading_message;
+            busy: busy;
             home_clicked => {
                 if !busy {
                     update_deck_tree();

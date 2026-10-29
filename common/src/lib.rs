@@ -4,6 +4,7 @@ pub mod api;
 pub mod config;
 pub mod fonts;
 pub mod frontend;
+pub mod profile;
 pub mod sync;
 pub mod utils;
 
@@ -14,5 +15,6 @@ pub use api::{
 };
 pub use config::Config;
 pub use fonts::{FontCatalog, register_catalog_fonts};
-pub use frontend::{SyncHooks, init_ui, maybe_auto_sync, wire_callbacks};
+pub use frontend::{FrontendHooks, SyncHooks, init_ui, maybe_auto_sync, wire_callbacks};
+pub use profile::{ProfileTimer, spawn_font_benchmark};
 pub use sync::{SyncAction, SyncManager, SyncResult, SyncStatus};
