@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use toml_edit::{DocumentMut, Table, value};
+use toml_edit::{Array, DocumentMut, Item, Table, Value, value};
 
 const DEFAULT_CONFIG_PATH: &str = "/mnt/ext1/applications/pbanki/config.toml";
 
@@ -17,6 +17,35 @@ pub struct Config {
 pub struct GeneralConfig {
     pub language: String,
     pub collection_path: String,
+    #[serde(default = "default_card_font")]
+    pub card_font: String,
+    #[serde(default = "default_card_fallback_fonts")]
+    pub card_fallback_fonts: Vec<String>,
+    #[serde(default = "default_font_dirs")]
+    pub font_dirs: Vec<String>,
+}
+
+fn default_card_font() -> String {
+    "Ryo Gothic PlusN".into()
+}
+
+fn default_card_fallback_fonts() -> Vec<String> {
+    vec![
+        "Adobe Ming Std".into(),
+        "Adobe Heiti Std".into(),
+        "Noto Sans CJK JP".into(),
+    ]
+}
+
+fn default_font_dirs() -> Vec<String> {
+    vec![
+        "/mnt/ext1/system/adobe/fonts".into(),
+        "/mnt/ext1/system/fonts".into(),
+        "/system/adobe/fonts".into(),
+        "/adobefonts".into(),
+        "/fonts".into(),
+        "/ebrmain/fonts".into(),
+    ]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +95,9 @@ impl Default for Config {
             general: GeneralConfig {
                 language: "en-GB".into(),
                 collection_path: "/mnt/ext1/applications/pbanki/collection".into(),
+                card_font: default_card_font(),
+                card_fallback_fonts: default_card_fallback_fonts(),
+                font_dirs: default_font_dirs(),
             },
             ankiweb: AnkiWebConfig {
                 username: String::new(),
@@ -91,6 +123,23 @@ language = "en-GB"
 
 # Collection path (relative to app directory or absolute)
 collection_path = "/mnt/ext1/applications/pbanki/collection"
+
+# Font family for card text. PocketBook ships Ryo Gothic PlusN in the Adobe
+# fonts folder (/mnt/ext1/system/adobe/fonts on-device, /system/adobe/fonts over USB).
+card_font = "Ryo Gothic PlusN"
+
+# Fallback families used when the card contains characters outside card_font.
+card_fallback_fonts = ["Adobe Ming Std", "Adobe Heiti Std", "Noto Sans CJK JP"]
+
+# Directories scanned for the fonts above. USB view /system/... maps to /mnt/ext1/system/... on-device.
+font_dirs = [
+    "/mnt/ext1/system/adobe/fonts",
+    "/mnt/ext1/system/fonts",
+    "/system/adobe/fonts",
+    "/adobefonts",
+    "/fonts",
+    "/ebrmain/fonts",
+]
 
 [ankiweb]
 # AnkiWeb synchronization settings
@@ -132,6 +181,18 @@ impl Config {
             let contents = fs::read_to_string(path)?;
             let mut config: Config = toml::from_str(&contents)?;
             config.path = path.to_path_buf();
+
+            // Existing configs predate the font settings. Add any missing
+            // defaults without touching values the user already set.
+            let needs_save = ["card_font", "card_fallback_fonts", "font_dirs"]
+                .iter()
+                .any(|key| !general_has_key(&contents, key));
+            if needs_save {
+                if let Err(err) = config.save() {
+                    eprintln!("Could not add default font settings to config: {err}");
+                }
+            }
+
             Ok(config)
         } else {
             let mut config = Config::default();
@@ -164,6 +225,10 @@ impl Config {
         let general = table_mut(&mut document, "general")?;
         general["language"] = value(&self.general.language);
         general["collection_path"] = value(&self.general.collection_path);
+        general["card_font"] = value(&self.general.card_font);
+        general["card_fallback_fonts"] =
+            Item::Value(string_array(&self.general.card_fallback_fonts));
+        general["font_dirs"] = Item::Value(string_array(&self.general.font_dirs));
 
         let ankiweb = table_mut(&mut document, "ankiweb")?;
         ankiweb["username"] = value(&self.ankiweb.username);
@@ -205,6 +270,27 @@ fn default_config_document() -> DocumentMut {
         .expect("default config template must be valid TOML")
 }
 
+fn string_array(values: &[String]) -> Value {
+    let mut array = Array::new();
+    for value in values {
+        array.push(value.as_str());
+    }
+    Value::Array(array)
+}
+
+fn general_has_key(contents: &str, key: &str) -> bool {
+    contents
+        .parse::<DocumentMut>()
+        .ok()
+        .and_then(|document| {
+            document
+                .get("general")
+                .and_then(Item::as_table)
+                .map(|general| general.contains_key(key))
+        })
+        .unwrap_or(false)
+}
+
 fn table_mut<'a>(
     document: &'a mut DocumentMut,
     key: &str,
@@ -215,4 +301,120 @@ fn table_mut<'a>(
     document[key]
         .as_table_mut()
         .ok_or_else(|| format!("config key `{key}` is not a table").into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_config_path(name: &str) -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "pbanki-{name}-{}-{unique}.toml",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn default_template_parses() {
+        let config: Config = toml::from_str(DEFAULT_CONFIG_WITH_COMMENTS).unwrap();
+        assert_eq!(config.general.card_font, "Ryo Gothic PlusN");
+        assert!(!config.general.card_fallback_fonts.is_empty());
+        assert!(!config.general.font_dirs.is_empty());
+    }
+
+    #[test]
+    fn new_config_file_is_written_with_font_settings() {
+        let path = temp_config_path("new");
+        let config = Config::load_or_create(path.to_str().unwrap()).unwrap();
+        assert_eq!(config.general.card_font, "Ryo Gothic PlusN");
+        assert_eq!(
+            config.general.card_fallback_fonts,
+            vec![
+                "Adobe Ming Std".to_string(),
+                "Adobe Heiti Std".to_string(),
+                "Noto Sans CJK JP".to_string(),
+            ]
+        );
+        assert!(
+            config
+                .general
+                .font_dirs
+                .iter()
+                .any(|dir| dir == "/mnt/ext1/system/adobe/fonts")
+        );
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains(r#"card_font = "Ryo Gothic PlusN""#));
+        assert!(contents.contains("card_fallback_fonts"));
+        assert!(contents.contains(r#""/mnt/ext1/system/adobe/fonts""#));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn existing_config_gets_missing_font_defaults() {
+        let path = temp_config_path("migrate");
+        fs::write(
+            &path,
+            r#"[general]
+language = "en-GB"
+collection_path = "/tmp/collection"
+
+[ankiweb]
+username = ""
+password = ""
+"#,
+        )
+        .unwrap();
+
+        let config = Config::load_or_create(path.to_str().unwrap()).unwrap();
+        assert_eq!(config.general.card_font, "Ryo Gothic PlusN");
+        assert!(!config.general.card_fallback_fonts.is_empty());
+        assert!(!config.general.font_dirs.is_empty());
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("card_font"));
+        assert!(contents.contains("card_fallback_fonts"));
+        assert!(contents.contains("font_dirs"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn existing_font_settings_are_preserved() {
+        let path = temp_config_path("preserve");
+        fs::write(
+            &path,
+            r#"[general]
+language = "en-GB"
+collection_path = "/tmp/collection"
+card_font = "Custom Font"
+card_fallback_fonts = ["Custom Fallback"]
+font_dirs = ["/custom/fonts"]
+
+[ankiweb]
+username = ""
+password = ""
+"#,
+        )
+        .unwrap();
+
+        let config = Config::load_or_create(path.to_str().unwrap()).unwrap();
+        assert_eq!(config.general.card_font, "Custom Font");
+        assert_eq!(
+            config.general.card_fallback_fonts,
+            vec!["Custom Fallback".to_string()]
+        );
+        assert_eq!(config.general.font_dirs, vec!["/custom/fonts".to_string()]);
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains(r#"card_font = "Custom Font""#));
+        assert!(contents.contains(r#"card_fallback_fonts = ["Custom Fallback"]"#));
+
+        let _ = fs::remove_file(path);
+    }
 }

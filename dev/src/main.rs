@@ -16,6 +16,7 @@ fn main() {
     let config = Rc::new(RefCell::new(config));
 
     let session = init_session(&config.borrow());
+    register_catalog_fonts(&session.font_catalog);
 
     let ui = MainWindow::new().unwrap();
     init_ui(&ui, &session, &config.borrow(), false);

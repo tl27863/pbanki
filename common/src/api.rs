@@ -1,15 +1,17 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use anki::collection::{Collection, CollectionBuilder};
+use anki::prelude::I18n;
 use anki::scheduler::answering::CardAnswer;
 use anki::scheduler::states::SchedulingStates;
 use anki::services::SchedulerService;
 use anki::timestamp::{TimestampMillis, TimestampSecs};
-use anki::{collection::CollectionBuilder, prelude::I18n};
 
+use crate::fonts::FontCatalog;
 use crate::{
     CardNode, DeckNode, DeckTree, SyncAction, SyncManager, SyncResult, SyncSettings, SyncState,
     SyncStatus, Translations,
@@ -18,10 +20,16 @@ use crate::{
 use slint::ModelRc;
 
 pub struct LearnSession {
-    pub collection: Rc<RefCell<Option<anki::collection::Collection>>>,
+    pub collection: Rc<RefCell<Option<Collection>>>,
     pub current_card: RefCell<Option<i64>>,
     pub states: RefCell<Option<SchedulingStates>>,
     pub start_time: RefCell<Option<Instant>>,
+    pub current_deck_id: Cell<Option<i64>>,
+    /// Incremented for every background card job, used to ignore stale UI timers.
+    pub job_seq: Cell<u64>,
+    /// True while a card is being loaded on a worker thread or a sync is running.
+    pub busy: Cell<bool>,
+    pub font_catalog: FontCatalog,
     pub sync_manager: Rc<SyncManager>,
 }
 
@@ -68,11 +76,21 @@ pub fn init_session(config: &crate::config::Config) -> Rc<LearnSession> {
         );
     }
 
+    let font_catalog = FontCatalog::build(
+        &config.general.card_font,
+        &config.general.card_fallback_fonts,
+        &config.general.font_dirs,
+    );
+
     Rc::new(LearnSession {
         collection: Rc::new(RefCell::new(Some(col))),
         current_card: RefCell::new(None),
         states: RefCell::new(None),
         start_time: RefCell::new(None),
+        current_deck_id: Cell::new(None),
+        job_seq: Cell::new(0),
+        busy: Cell::new(false),
+        font_catalog,
         sync_manager: Rc::new(SyncManager::new()),
     })
 }
@@ -183,118 +201,183 @@ pub fn update_deck_tree(session: &LearnSession) -> DeckTree {
     }
 }
 
-pub fn next_card(session: &LearnSession, deck: DeckNode, chars_per_page: i32) -> CardNode {
-    let mut col_borrow = session.collection.borrow_mut();
-    let Some(col) = col_borrow.as_mut() else {
-        return no_card(deck);
+/// A card loaded from the collection. This type contains no Slint models so it
+/// can be produced on a worker thread and turned into a `CardNode` on the UI
+/// thread.
+pub struct LoadedCard {
+    pub id: i64,
+    pub new_count: i32,
+    pub learn_count: i32,
+    pub due_count: i32,
+    pub question: Vec<slint::SharedString>,
+    pub answer: Vec<slint::SharedString>,
+    pub durations: Vec<slint::SharedString>,
+    pub states: Option<SchedulingStates>,
+    pub font: String,
+}
+
+impl LoadedCard {
+    fn no_cards(new_count: i32, learn_count: i32, due_count: i32, font: &str) -> Self {
+        Self {
+            id: -1,
+            new_count,
+            learn_count,
+            due_count,
+            question: vec!["No more cards due!".into()],
+            answer: Vec::new(),
+            durations: Vec::new(),
+            states: None,
+            font: font.to_owned(),
+        }
+    }
+
+    pub fn into_card_node(self, deck: DeckNode) -> CardNode {
+        let deck = DeckNode {
+            new: self.new_count,
+            learn: self.learn_count,
+            due: self.due_count,
+            ..deck
+        };
+        CardNode {
+            id: self.id,
+            deck,
+            question: Rc::new(slint::VecModel::from(self.question)).into(),
+            answer: Rc::new(slint::VecModel::from(self.answer)).into(),
+            durations: Rc::new(slint::VecModel::from(self.durations)).into(),
+        }
+    }
+}
+
+pub fn error_card(deck: DeckNode, message: &str) -> CardNode {
+    CardNode {
+        id: -1,
+        deck,
+        question: Rc::new(slint::VecModel::from(vec![slint::SharedString::from(
+            format!("Could not load card: {message}"),
+        )]))
+        .into(),
+        answer: ModelRc::new(slint::VecModel::default()),
+        durations: ModelRc::new(slint::VecModel::default()),
+    }
+}
+
+/// Fetches and renders the next card. Runs on a worker thread; `set_deck`
+/// should only be true when the collection's current deck differs from
+/// `deck_id`, so that Anki's card queue is not invalidated on every card.
+pub fn next_card(
+    col: &mut Collection,
+    deck_id: i64,
+    chars_per_page: i32,
+    set_deck: bool,
+    fonts: &FontCatalog,
+) -> Result<LoadedCard, String> {
+    if set_deck {
+        col.set_current_deck(anki::decks::DeckId(deck_id))
+            .map_err(|err| format!("could not open deck: {err}"))?;
+    }
+
+    let queued_cards = col
+        .get_queued_cards(1, false)
+        .map_err(|err| format!("could not load the card queue: {err}"))?;
+    let new_count = queued_cards.new_count as i32;
+    let learn_count = queued_cards.learning_count as i32;
+    let due_count = queued_cards.review_count as i32;
+    let Some(card) = queued_cards.cards.first() else {
+        return Ok(LoadedCard::no_cards(
+            new_count,
+            learn_count,
+            due_count,
+            fonts.primary(),
+        ));
     };
-    let _ = col.set_current_deck(anki::decks::DeckId(deck.id));
-    let queued_cards = col.get_queued_cards(1, false).unwrap();
-    let queued_card = queued_cards.cards.first();
 
-    if let Some(card) = queued_card {
-        *session.start_time.borrow_mut() = Some(Instant::now());
-        *session.states.borrow_mut() = Some(card.states.clone());
+    let durations = col
+        .describe_next_states(&card.states)
+        .unwrap_or_else(|_| vec![String::new(); 4]);
 
-        let durations = col
-            .describe_next_states(&card.states)
-            .unwrap_or_else(|_| vec!["".into(); 4]);
+    let rendered = col
+        .render_existing_card(card.card.id(), false, false)
+        .map_err(|err| format!("could not render card: {err}"))?;
 
-        let rendered = col
-            .render_existing_card(card.card.id(), false, false)
-            .unwrap();
+    let mut answer = anki::text::strip_html(rendered.answer().as_ref()).into_owned();
 
-        let mut answer = anki::text::strip_html(rendered.answer().as_ref()).into_owned();
+    // Handle special case for type in cards
+    if answer.contains("[[type:") {
+        let note_opt = col
+            .storage
+            .get_note(card.card.note_id())
+            .map_err(|err| format!("could not load note: {err}"))?;
 
-        // Handle special case for type in cards
-        if answer.contains("[[type:") {
-            let note_opt = col.storage.get_note(card.card.note_id()).unwrap();
+        if let Some(note) = note_opt {
+            let fields = note.fields();
+            let notetype_id = note.notetype_id;
+            let notetype = col
+                .get_notetype(notetype_id)
+                .map_err(|err| format!("could not load notetype: {err}"))?;
 
-            if let Some(note) = note_opt {
-                let fields = note.fields();
-                let notetype_id = note.notetype_id;
-                let notetype = col.get_notetype(notetype_id).unwrap();
-
-                if let Some(notetype) = notetype {
-                    for (index, field) in notetype.fields.iter().enumerate() {
-                        if field.name == "Back" {
-                            answer = (&fields[index]).to_owned();
+            if let Some(notetype) = notetype {
+                for (index, field) in notetype.fields.iter().enumerate() {
+                    if field.name == "Back" {
+                        if let Some(value) = fields.get(index) {
+                            answer = value.to_owned();
                         }
                     }
                 }
             }
         }
-        drop(col_borrow);
-        let updated_deck = DeckNode {
-            new: queued_cards.new_count as i32,
-            learn: queued_cards.learning_count as i32,
-            due: queued_cards.review_count as i32,
-            ..deck
-        };
-        let card_node = CardNode {
-            id: card.card.id().0,
-            deck: updated_deck,
-            question: Rc::new(slint::VecModel::from(
-                crate::utils::strip_html_remove_brackets_and_paginate(
-                    rendered.question().as_ref(),
-                    true,
-                    chars_per_page as usize,
-                ),
-            ))
-            .into(),
-            answer: Rc::new(slint::VecModel::from(crate::utils::paginate_text(
-                &answer,
-                chars_per_page as usize,
-            )))
-            .into(),
-            durations: Rc::new(slint::VecModel::from(
-                durations
-                    .into_iter()
-                    .map(|s| s.into())
-                    .collect::<Vec<slint::SharedString>>(),
-            ))
-            .into(),
-        };
-
-        *session.current_card.borrow_mut() = card_node.id.into();
-        card_node
-    } else {
-        CardNode {
-            id: -1,
-            deck,
-            question: ModelRc::new(slint::VecModel::from(vec!["No more cards due!".into()])),
-            answer: ModelRc::new(slint::VecModel::default()),
-            durations: ModelRc::new(slint::VecModel::default()),
-        }
     }
+
+    let question_html = rendered.question().into_owned();
+    let question_text = anki::text::strip_html(&question_html);
+    let combined = format!("{question_text}{answer}");
+    let font_choice = fonts.choose_font(&combined);
+    if !font_choice.missing.is_empty() {
+        eprintln!(
+            "[font] card {}: {} character(s) not covered by '{}': {:?}",
+            card.card.id().0,
+            font_choice.missing.len(),
+            font_choice.family,
+            font_choice.missing
+        );
+    }
+    let answer_text = fonts.sanitize(&answer, &font_choice.family);
+
+    let chars_per_page = chars_per_page.max(1) as usize;
+    // Sanitize after stripping: replacing a missing character inside HTML
+    // markup would corrupt tags, and coverage was checked on the visible text.
+    let question =
+        crate::utils::strip_html_remove_brackets_and_paginate(&question_html, true, chars_per_page)
+            .into_iter()
+            .map(|page| slint::SharedString::from(fonts.sanitize(&page, &font_choice.family)))
+            .collect();
+    let answer = crate::utils::paginate_text(&answer_text, chars_per_page);
+
+    Ok(LoadedCard {
+        id: card.card.id().0,
+        new_count,
+        learn_count,
+        due_count,
+        question,
+        answer,
+        durations: durations.into_iter().map(Into::into).collect(),
+        states: Some(card.states.clone()),
+        font: font_choice.family,
+    })
 }
 
+/// Applies an answer and returns the next card. Runs on a worker thread.
+#[allow(clippy::too_many_arguments)]
 pub fn rate_card(
-    session: &LearnSession,
+    col: &mut Collection,
+    card_id: i64,
+    states: SchedulingStates,
+    elapsed: u32,
     rating: i32,
-    deck: DeckNode,
+    deck_id: i64,
     chars_per_page: i32,
-) -> CardNode {
-    let card_id = session.current_card.borrow().unwrap_or(-1);
-    let states = session.states.borrow().clone();
-
-    if card_id == -1 || states.is_none() {
-        return CardNode {
-            id: -1,
-            deck,
-            question: ModelRc::new(slint::VecModel::from(vec!["No more cards due!".into()])),
-            answer: ModelRc::new(slint::VecModel::default()),
-            durations: ModelRc::new(slint::VecModel::default()),
-        };
-    }
-
-    let states = states.unwrap();
-    let elapsed = session
-        .start_time
-        .borrow()
-        .map(|t| t.elapsed().as_millis() as u32)
-        .unwrap_or(0);
-
+    set_deck: bool,
+    fonts: &FontCatalog,
+) -> Result<LoadedCard, String> {
     let (new_state, rating_enum) = match rating {
         0 => (
             states.again.clone(),
@@ -312,15 +395,7 @@ pub fn rate_card(
             states.easy.clone(),
             anki::scheduler::answering::Rating::Easy,
         ),
-        _ => {
-            return CardNode {
-                id: -1,
-                deck,
-                question: ModelRc::new(slint::VecModel::from(vec!["No more cards due!".into()])),
-                answer: ModelRc::new(slint::VecModel::default()),
-                durations: ModelRc::new(slint::VecModel::default()),
-            };
-        }
+        _ => return Err("invalid rating".into()),
     };
 
     let mut answer = CardAnswer {
@@ -334,17 +409,11 @@ pub fn rate_card(
         from_queue: true,
     };
 
-    {
-        let mut col_borrow = session.collection.borrow_mut();
-        let Some(col) = col_borrow.as_mut() else {
-            return no_card(deck);
-        };
-        if let Err(e) = col.answer_card(&mut answer) {
-            eprintln!("Failed to answer card {}: {:?}", card_id, e);
-        }
+    if let Err(err) = col.answer_card(&mut answer) {
+        eprintln!("Failed to answer card {card_id}: {err:?}");
     }
 
-    next_card(session, deck, chars_per_page)
+    next_card(col, deck_id, chars_per_page, set_deck, fonts)
 }
 
 pub fn sync_now(session: &LearnSession, config: &mut crate::config::Config) -> SyncResult {
@@ -436,7 +505,9 @@ pub fn full_sync(
             ));
         }
         if let Err(err) = reopen_collection(session, &mut builder, config) {
-            return error_result(format!("Could not reopen collection before download: {err}"));
+            return error_result(format!(
+                "Could not reopen collection before download: {err}"
+            ));
         }
     }
 
@@ -604,6 +675,15 @@ fn reset_session_memory(session: &LearnSession) {
     *session.current_card.borrow_mut() = None;
     *session.states.borrow_mut() = None;
     *session.start_time.borrow_mut() = None;
+    session.current_deck_id.set(None);
+}
+
+#[allow(dead_code)]
+fn assert_worker_types_are_send() {
+    fn assert_send<T: Send>() {}
+    assert_send::<Collection>();
+    assert_send::<SchedulingStates>();
+    assert_send::<LoadedCard>();
 }
 
 fn error_result(message: String) -> SyncResult {
@@ -614,16 +694,6 @@ fn error_result(message: String) -> SyncResult {
         action: SyncAction::NoChanges,
         media_error: None,
         new_endpoint: None,
-    }
-}
-
-fn no_card(deck: DeckNode) -> CardNode {
-    CardNode {
-        id: -1,
-        deck,
-        question: ModelRc::new(slint::VecModel::from(vec!["No more cards due!".into()])),
-        answer: ModelRc::new(slint::VecModel::default()),
-        durations: ModelRc::new(slint::VecModel::default()),
     }
 }
 

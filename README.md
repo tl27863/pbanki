@@ -27,7 +27,9 @@ make          # debug build
 make release  # release build
 ```
 
-Requires: `cargo-zigbuild` and `zig`
+Requires: `cargo-zigbuild` and `zig`. The InkView dependencies come from the
+`pbanki-eink-refresh` fork of `inkview-rs` and are fetched by Cargo
+automatically.
 
 ## Emulator (PocketBook Era / PB700)
 
@@ -144,10 +146,28 @@ pbAnki uses a TOML configuration file. On first launch, a default config will be
 ```toml
 [general]
 # Language code for Anki i18n (e.g., "en", "de", "fr", "ja", "es", "pt", "ru", "zh", "ko")
-language = "en"
+language = "en-GB"
 
 # Collection path (relative to app directory or absolute)
 collection_path = "/mnt/ext1/applications/pbanki/collection"
+
+# Font family for card text. PocketBook ships Ryo Gothic PlusN in the Adobe
+# fonts folder (/mnt/ext1/system/adobe/fonts on-device, /system/adobe/fonts over USB).
+card_font = "Ryo Gothic PlusN"
+
+# Fallback families used when the card contains characters outside card_font.
+card_fallback_fonts = ["Adobe Ming Std", "Adobe Heiti Std", "Noto Sans CJK JP"]
+
+# Directories scanned for the fonts above. USB view /system/... maps to
+# /mnt/ext1/system/... on-device.
+font_dirs = [
+    "/mnt/ext1/system/adobe/fonts",
+    "/mnt/ext1/system/fonts",
+    "/system/adobe/fonts",
+    "/adobefonts",
+    "/fonts",
+    "/ebrmain/fonts",
+]
 
 [ankiweb]
 # AnkiWeb synchronization settings
@@ -177,6 +197,26 @@ sync_on_exit = false
 # Synchronize media files (audio/images) as well as the collection
 sync_media = true
 ```
+
+### Fonts
+
+Card text uses `card_font`, then the families in `card_fallback_fonts` in order.
+pbAnki checks each card against the fonts' character maps and changes the card
+font when needed. If no configured font covers a character, it is displayed as
+`?` instead of letting the renderer stall. The UI itself stays in the system
+`Monospace` font.
+
+Font files are discovered by scanning `font_dirs` at startup. The defaults cover
+the PB710 runtime paths, the USB mass-storage view, and older PB700 images.
+Existing configs are migrated automatically: missing `card_font`,
+`card_fallback_fonts`, or `font_dirs` keys are added on the next launch without
+overwriting values you already set.
+
+At runtime, the configured primary and fallback files are linked into
+`/tmp/pbanki-fonts`, and Slint registers that directory. This happens for both
+PocketBook and desktop builds, so custom `font_dirs` also make fonts available to
+Slint during desktop testing. This directory is recreated on every launch and is
+not visible over USB; change the config values instead of editing it.
 
 ## Syncing
 
@@ -208,9 +248,10 @@ pbAnki uses Anki's built-in translations, supporting 70+ languages including:
 ## Project Structure
 
 ```
-src/      # PocketBook build (uses inkview-rs)
+common/   # shared Rust logic: API, card jobs, fonts, sync, Slint build
+src/      # PocketBook build (uses the patched inkview-rs fork)
 dev/      # Desktop build (for development)
-ui/       # Slint UI components (shared)
+ui/       # Slint UI components (shared, not a Cargo package)
 ```
 
 ## Current Features
@@ -222,6 +263,10 @@ ui/       # Slint UI components (shared)
 - Answer cards with Again/Hard/Good/Easy ratings
 - Display interval durations on rating buttons
 - Real-time deck count updates after answering
+- Asynchronous card loading with a blocking loading screen
+- Configurable card font and fallback chain with a missing-glyph guard
+- Japanese font support on PocketBook (Ryo Gothic PlusN by default)
+- E-ink refresh finalization fix for card and loading-screen transitions
 - Support for type-in cards (`[[type:Back]]`)
 - Multi-language support via Anki's i18n system (70+ languages)
 - Configurable collection path and language settings
