@@ -92,6 +92,19 @@ export component LearnScreen {
 
     forward-focus: focus-scope;
 
+    // Take key focus (page/rating keys) once, from a timer rather than `init`:
+    // deck entry creates this screen while the window layout is being
+    // evaluated, and focusing inside `init` re-enters that geometry binding
+    // (Slint panics with "Recursion detected").
+    focus-timer := Timer {
+        interval: 1ms;
+        running: true;
+        triggered => {
+            self.running = false;
+            focus-scope.focus();
+        }
+    }
+
     focus-scope := FocusScope {
         key-pressed(event) => {
             if valid_deck && !loading && !busy {
