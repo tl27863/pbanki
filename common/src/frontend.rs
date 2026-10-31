@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
 use anki::collection::Collection;
@@ -16,9 +16,6 @@ use crate::profile_log;
 use crate::{
     Config, DeckNode, LearnSession, MainWindow, SyncAction, SyncResult, SyncState, SyncStatus,
 };
-
-/// How often the UI thread checks whether a background card load has finished.
-const JOB_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 /// Delay before a deck entry shows its loading screen. Loads that finish
 /// sooner (first entries take ~120-190 ms on the PB710, later ones a few ms)
@@ -101,6 +98,12 @@ impl Drop for SyncGuard {
             hooks.finish();
         }
     }
+}
+
+thread_local! {
+    /// The card job whose result the UI thread is waiting for. There is at
+    /// most one: `LearnSession.busy` blocks new jobs until `finish_job`.
+    static PENDING_JOB: RefCell<Option<PendingJob>> = const { RefCell::new(None) };
 }
 
 struct PendingJob {
@@ -198,8 +201,25 @@ fn spawn_card_job<F>(
     drop(ui_ref);
 
     let (tx, rx) = mpsc::channel();
+    PENDING_JOB.with(|slot| {
+        *slot.borrow_mut() = Some(PendingJob {
+            id: job_id,
+            ui,
+            session,
+            deck,
+            receiver: rx,
+            full_transition,
+            hooks,
+        })
+    });
+
     let queued_timer = ProfileTimer::start();
     std::thread::spawn(move || {
+        // Declared before `tx`, so it is dropped after it: delivery always
+        // finds either the result or a disconnected channel, also when
+        // `operation` panics.
+        let _deliver = DeliverOnDrop(job_id);
+        let tx = tx;
         profile_log!("[job {job_id}] worker start delay {:?}", queued_timer.elapsed());
         let started = Instant::now();
         let result = operation(&mut collection);
@@ -209,27 +229,34 @@ fn spawn_card_job<F>(
         );
         let _ = tx.send((collection, result));
     });
-
-    schedule_job_poll(Rc::new(PendingJob {
-        id: job_id,
-        ui,
-        session,
-        deck,
-        receiver: rx,
-        full_transition,
-        hooks,
-    }));
 }
 
-fn schedule_job_poll(job: Rc<PendingJob>) {
-    slint::Timer::single_shot(JOB_POLL_INTERVAL, move || poll_job(job));
+/// Hands a finished card job to the UI thread through the Slint event loop.
+struct DeliverOnDrop(u64);
+
+impl Drop for DeliverOnDrop {
+    fn drop(&mut self) {
+        let job_id = self.0;
+        // Fails only once the event loop has exited, when nobody is waiting.
+        let _ = slint::invoke_from_event_loop(move || deliver_job(job_id));
+    }
 }
 
-fn poll_job(job: Rc<PendingJob>) {
+fn deliver_job(job_id: u64) {
+    let job = PENDING_JOB.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if slot.as_ref().is_some_and(|job| job.id == job_id) {
+            slot.take()
+        } else {
+            None
+        }
+    });
+    let Some(job) = job else {
+        return;
+    };
     match job.receiver.try_recv() {
         Ok((collection, result)) => finish_job(&job, Some(collection), result),
-        Err(TryRecvError::Empty) => schedule_job_poll(job),
-        Err(TryRecvError::Disconnected) => finish_job(
+        Err(_) => finish_job(
             &job,
             None,
             Err("card loader stopped unexpectedly; restart pbAnki".into()),
