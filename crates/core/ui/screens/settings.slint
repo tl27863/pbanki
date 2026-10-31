@@ -1,0 +1,297 @@
+import { Button, CheckBox, LineEdit, ScrollView } from "std-widgets.slint";
+import { Constants, Translations } from "../constants.slint";
+import { EditField, SyncSettings, SyncState } from "../types.slint";
+
+component SettingsField {
+    in property <string> label;
+    in-out property <string> value;
+    in property <bool> password;
+    in property <bool> native-keyboard;
+    in property <bool> enabled: true;
+
+    callback changed(string);
+    callback edit-requested(string);
+
+    VerticalLayout {
+        width: 100%;
+        vertical-stretch: 0;
+        spacing: Constants.spacing_standard;
+
+        Text {
+            text: root.label;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_subcontent;
+        }
+
+        if root.native-keyboard: Rectangle {
+            width: 100%;
+            height: 40px;
+            border-width: 1px;
+            border-color: #808080;
+            border-radius: 2px;
+            background: #FFFFFF;
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                Text {
+                    text: root.password && root.value != "" ? "********" : root.value;
+                    font-family: Constants.font_family_standard;
+                    font-size: Constants.font_size_content;
+                    vertical-alignment: center;
+                    overflow: TextOverflow.elide;
+                    color: root.value == "" ? #808080 : #000000;
+                }
+            }
+
+            TouchArea {
+                enabled: root.enabled;
+                clicked => {
+                    root.edit-requested(root.value);
+                }
+            }
+        }
+
+        if !root.native-keyboard: LineEdit {
+            width: 100%;
+            height: 40px;
+            vertical-stretch: 0;
+            text: root.value;
+            input-type: InputType.text;
+            enabled: root.enabled;
+            font-size: Constants.font_size_content;
+            edited(text) => {
+                root.value = text;
+                root.changed(text);
+            }
+        }
+    }
+}
+
+export component SettingsScreen {
+    in property <Translations> tr;
+    in-out property <SyncSettings> settings;
+    in property <SyncState> sync_state;
+    in property <bool> native-keyboard: false;
+    in-out property <bool> confirm-full-sync: false;
+
+    callback back();
+    callback save(SyncSettings);
+    callback sync-now();
+    callback full-sync(upload: bool);
+    callback edit-field(field: EditField, current: string);
+
+    VerticalLayout {
+        width: 100%;
+        height: 100%;
+        padding: Constants.padding_standard;
+        spacing: Constants.spacing_medium;
+
+        HorizontalLayout {
+            spacing: Constants.spacing_medium;
+
+            TouchArea {
+                width: 32px;
+                height: 32px;
+                Image {
+                    source: @image-url("../icons/home.svg");
+                }
+                clicked => {
+                    root.back();
+                }
+            }
+
+            Text {
+                text: tr.settings;
+                font-family: Constants.font_family_standard;
+                font-size: Constants.font_size_heading;
+                font-weight: 800;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            text: sync_state.status_message;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_subcontent;
+            color: sync_state.has_error ? #CC0000 : (sync_state.has_warning ? #B36B00 : #606060);
+            wrap: TextWrap.word-wrap;
+        }
+
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                width: 100%;
+                vertical-stretch: 0;
+                spacing: Constants.spacing_medium;
+
+                SettingsField {
+                    height: 70px;
+                    vertical-stretch: 0;
+                    label: tr.server_url;
+                    value: settings.endpoint;
+                    native-keyboard: root.native-keyboard;
+                    enabled: !sync_state.is_syncing;
+                    changed(value) => {
+                        settings.endpoint = value;
+                    }
+                    edit-requested(current) => {
+                        root.edit-field(EditField.endpoint, current);
+                    }
+                }
+
+                SettingsField {
+                    height: 70px;
+                    vertical-stretch: 0;
+                    label: tr.email;
+                    value: settings.username;
+                    native-keyboard: root.native-keyboard;
+                    enabled: !sync_state.is_syncing;
+                    changed(value) => {
+                        settings.username = value;
+                    }
+                    edit-requested(current) => {
+                        root.edit-field(EditField.username, current);
+                    }
+                }
+
+                SettingsField {
+                    height: 70px;
+                    vertical-stretch: 0;
+                    label: tr.password;
+                    value: settings.password;
+                    password: true;
+                    native-keyboard: root.native-keyboard;
+                    enabled: !sync_state.is_syncing;
+                    changed(value) => {
+                        settings.password = value;
+                    }
+                    edit-requested(current) => {
+                        root.edit-field(EditField.password, current);
+                    }
+                }
+
+                // Slint's default size, set explicitly: an unset CheckBox
+                // font-size is a constant 0px, which the software-renderer
+                // glyph embedding (common/build.rs) rasterizes at the font's
+                // design size, adding ~60 MB to the binary.
+                auto_sync_cb := CheckBox {
+                    height: 32px;
+                    vertical-stretch: 0;
+                    font-size: 12px;
+                    text: tr.auto_sync;
+                    checked: settings.auto_sync;
+                    enabled: !sync_state.is_syncing;
+                    toggled => {
+                        settings.auto_sync = auto_sync_cb.checked;
+                    }
+                }
+
+                sync_on_exit_cb := CheckBox {
+                    height: 32px;
+                    vertical-stretch: 0;
+                    font-size: 12px;
+                    text: tr.sync_on_exit;
+                    checked: settings.sync_on_exit;
+                    enabled: !sync_state.is_syncing;
+                    toggled => {
+                        settings.sync_on_exit = sync_on_exit_cb.checked;
+                    }
+                }
+
+                sync_media_cb := CheckBox {
+                    height: 32px;
+                    vertical-stretch: 0;
+                    font-size: 12px;
+                    text: tr.sync_media;
+                    checked: settings.sync_media;
+                    enabled: !sync_state.is_syncing;
+                    toggled => {
+                        settings.sync_media = sync_media_cb.checked;
+                    }
+                }
+
+                HorizontalLayout {
+                    height: 40px;
+                    vertical-stretch: 0;
+                    spacing: Constants.spacing_medium;
+
+                    Button {
+                        text: tr.save;
+                        height: 40px;
+                        vertical-stretch: 0;
+                        enabled: !sync_state.is_syncing;
+                        clicked => {
+                            root.save(root.settings);
+                        }
+                    }
+
+                    Button {
+                        text: tr.sync_now;
+                        height: 40px;
+                        vertical-stretch: 0;
+                        primary: true;
+                        enabled: !sync_state.is_syncing;
+                        clicked => {
+                            root.sync-now();
+                        }
+                    }
+                }
+
+                if sync_state.full_sync_required: VerticalLayout {
+                    vertical-stretch: 0;
+                    alignment: start;
+                    spacing: Constants.spacing_medium;
+                    padding-top: Constants.spacing_medium;
+
+                    Text {
+                        vertical-stretch: 0;
+                        text: tr.full_sync_required;
+                        font-family: Constants.font_family_standard;
+                        font-size: Constants.font_size_content;
+                        color: #CC0000;
+                        wrap: TextWrap.word-wrap;
+                    }
+
+                    confirm_full_sync_cb := CheckBox {
+                        height: 32px;
+                        vertical-stretch: 0;
+                        text: tr.confirm_full_sync;
+                        checked: root.confirm-full-sync;
+                        toggled => {
+                            root.confirm-full-sync = confirm_full_sync_cb.checked;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        height: 40px;
+                        vertical-stretch: 0;
+                        spacing: Constants.spacing_medium;
+
+                        if sync_state.can_upload: Button {
+                            height: 40px;
+                            vertical-stretch: 0;
+                            text: tr.upload;
+                            enabled: root.confirm-full-sync && !sync_state.is_syncing;
+                            clicked => {
+                                root.confirm-full-sync = false;
+                                root.full-sync(true);
+                            }
+                        }
+
+                        if sync_state.can_download: Button {
+                            height: 40px;
+                            vertical-stretch: 0;
+                            text: tr.download;
+                            enabled: root.confirm-full-sync && !sync_state.is_syncing;
+                            clicked => {
+                                root.confirm-full-sync = false;
+                                root.full-sync(false);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

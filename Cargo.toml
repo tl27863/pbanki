@@ -1,26 +1,27 @@
-[package]
-name = "pbanki"
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/desktop", "crates/pocketbook"]
+# A plain `cargo build`/`cargo test`/`cargo run` on the host covers the core
+# library and the desktop frontend (the only binary, so `cargo run` starts it).
+# The PocketBook build always selects `-p pbanki` (see the Makefile), so the
+# desktop's winit features are never unified into the ARM build.
+default-members = ["crates/core", "crates/desktop"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-euclid = "0.22.11"
-rgb = "0.8.52"
-common = { path = "./common" }
-slint = { version = "1.18.1", default-features = false, features = ["compat-1-2", "std", "software-renderer-systemfonts", "renderer-software"]}
+[workspace.dependencies]
+pbanki-core = { path = "crates/core" }
+anki = { git = "https://github.com/ankitects/anki", branch = "main" }
+anki_proto = { git = "https://github.com/ankitects/anki", branch = "main" }
+# Every member must use the same Slint; two copies fail at `set_platform`.
+# Members add their backend and renderer features on top.
+slint = { version = "1.18.1", default-features = false, features = ["compat-1-2", "std", "software-renderer-systemfonts", "renderer-software"] }
+slint-build = "1.18.1"
 inkview = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-upstream-master", default-features = false }
 inkview-slint = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-upstream-master", default-features = false }
 tokio = { version = "1", features = ["io-util"] }
-# Not used directly: makes Slint's fontique load libfontconfig at runtime
-# instead of linking it, so the armv7 cross build needs no fontconfig sysroot.
-# Without the library on the device, system fonts are skipped and the UI uses
-# the fonts registered through SLINT_FONT_PATH.
-fontique = { version = "0.11", features = ["fontconfig-dlopen"] }
-
-[features]
-default = []
-sdk-6-8 = ["inkview/sdk-6-8"]
-profile = ["common/profile"]
 
 [profile.release]
 opt-level = 3

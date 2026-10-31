@@ -14,7 +14,7 @@ Port of Anki to PocketBook devices using:
 ### Desktop (for development)
 
 ```bash
-cd dev
+cd crates/desktop
 cargo run
 ```
 
@@ -108,7 +108,7 @@ Overrides:
 - `PBANKI_SKIP_BUILD=1` — upload the existing `target/emulator/pbanki.app`.
 
 The emulator is experimental and does not cover e-ink-specific timing, suspend,
-Bluetooth or audio. The `src/main.rs` config path can be overridden with
+Bluetooth or audio. The `crates/pocketbook/src/main.rs` config path can be overridden with
 `PBANKI_CONFIG` for host-side testing; the device default is unchanged.
 
 ## Installation
@@ -261,10 +261,12 @@ pbAnki uses Anki's built-in translations, supporting 70+ languages including:
 ## Project Structure
 
 ```
-common/       # shared Rust logic: API, card jobs, fonts, sync, Slint build
-src/          # PocketBook build (uses the patched inkview-rs fork)
-dev/          # Desktop build (for development)
-ui/           # Slint UI components (shared, not a Cargo package)
+Cargo.toml          # Cargo workspace: shared dependency versions, release profile
+crates/core/        # pbanki-core: session, study, sync, fonts, config, UI wiring
+crates/core/ui/     # Slint UI sources, compiled by crates/core/build.rs
+crates/pocketbook/  # pbanki: PocketBook frontend (InkView, Wi-Fi, native keyboard)
+crates/desktop/     # pbanki-desktop: desktop frontend (winit) for development
+scripts/            # emulator, PocketBook launcher, CIFS mount helper
 ```
 
 ## Current Features
