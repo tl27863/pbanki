@@ -62,35 +62,33 @@ impl ProfileTimer {
     }
 }
 
-/// Measures fontdue first-use cost for every font Slint will load, off the UI
-/// thread.
+/// Logs, off the UI thread, how long reading each registered card font takes
+/// and which font the UI family (`ui_family`, e.g. "Monospace") resolves to.
 ///
-/// Slint parses each font with `fontdue::Font::from_bytes` on first use inside
-/// `render()` on the UI thread, then rasterizes the glyphs it draws. This runs
-/// the same parse plus a rasterization of `SAMPLE_TEXT` for the registered
-/// card fonts and for whatever the UI family (`ui_family`, e.g. "Monospace")
-/// resolves to, and logs the times and glyph counts.
+/// Slint reads every registered font file completely when its font collection
+/// is created, and rasterizes glyphs lazily with swash, so the file reads are
+/// the per-font startup cost worth tracking.
 ///
-/// The thread starts `BENCHMARK_DELAY` after launch at the lowest CPU
-/// priority, so it does not compete with the first frames. No-op without the
-/// `profile` feature.
-pub fn spawn_font_benchmark(catalog: &FontCatalog, ui_family: &str) {
+/// The thread starts `PROBE_DELAY` after launch at the lowest CPU priority,
+/// so it does not compete with the first frames. No-op without the `profile`
+/// feature.
+pub fn spawn_font_probe(catalog: &FontCatalog, ui_family: &str) {
     #[cfg(feature = "profile")]
     {
         let faces = catalog.registered_faces();
         let ui_family = ui_family.to_owned();
         let spawned = std::thread::Builder::new()
-            .name("pbanki-font-bench".into())
+            .name("pbanki-font-probe".into())
             .spawn(move || {
-                std::thread::sleep(benchmark::BENCHMARK_DELAY);
+                std::thread::sleep(probe::PROBE_DELAY);
                 // On Linux PRIO_PROCESS with id 0 applies to the calling thread.
                 unsafe {
                     libc::setpriority(libc::PRIO_PROCESS, 0, 19);
                 }
-                benchmark::run(faces, &ui_family)
+                probe::run(faces, &ui_family)
             });
         if let Err(err) = spawned {
-            profile_log!("fontdue benchmark thread failed to start: {err}");
+            profile_log!("font probe thread failed to start: {err}");
         }
     }
     #[cfg(not(feature = "profile"))]
@@ -100,7 +98,7 @@ pub fn spawn_font_benchmark(catalog: &FontCatalog, ui_family: &str) {
 }
 
 #[cfg(feature = "profile")]
-mod benchmark {
+mod probe {
     use std::path::PathBuf;
     use std::time::Instant;
 
@@ -110,37 +108,29 @@ mod benchmark {
     };
 
     /// Start delay after launch; the first present happens well before this.
-    pub(super) const BENCHMARK_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
-
-    /// Rasterized after parsing: about a card's worth of mixed text.
-    const SAMPLE_TEXT: &str = "The quick brown fox jumps over the lazy dog 0123456789 \
-        あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん \
-        アイウエオカキクケコサシスセソタチツテト 日本語の文法を勉強しています。両方とも試験に出る表現です。";
-
-    /// Slint's software renderer pixel size: 20 px font at scale factor 3.
-    const SAMPLE_PX: f32 = 60.0;
+    pub(super) const PROBE_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
 
     pub(super) fn run(faces: Vec<(String, PathBuf, u32)>, ui_family: &str) {
         let started = Instant::now();
         for (family, path, index) in faces {
             let read_started = Instant::now();
-            let data = match std::fs::read(&path) {
-                Ok(data) => data,
-                Err(err) => {
-                    profile_log!("fontdue '{family}' {}: read failed: {err}", path.display());
-                    continue;
-                }
-            };
-            let read = read_started.elapsed();
-            parse(&format!("'{family}' {}", path.display()), &data, index, read);
+            match std::fs::read(&path) {
+                Ok(data) => profile_log!(
+                    "font '{family}' {} index={index}: read={:?} bytes={}",
+                    path.display(),
+                    read_started.elapsed(),
+                    data.len()
+                ),
+                Err(err) => profile_log!("font '{family}' {}: read failed: {err}", path.display()),
+            }
         }
 
         resolve_ui_font(ui_family);
-        profile_log!("fontdue benchmark finished in {:?}", started.elapsed());
+        profile_log!("font probe finished in {:?}", started.elapsed());
     }
 
-    /// Repeats Slint's `FontRequest::query_fontique` for `family` against the
-    /// system collection: the named family, then sans-serif and system-ui.
+    /// Repeats Slint's font query for `family` against the system collection:
+    /// the named family, then sans-serif and system-ui.
     fn resolve_ui_font(family: &str) {
         let resolve_started = Instant::now();
         let mut collection = Collection::new(CollectionOptions {
@@ -163,60 +153,18 @@ mod benchmark {
         drop(query);
 
         let Some(font) = found else {
-            profile_log!("fontdue UI family '{family}': no system font matched");
+            profile_log!("UI family '{family}': no system font matched");
             return;
         };
         let name = collection
             .family_name(font.family.0)
             .unwrap_or("<unknown>")
             .to_owned();
-        let resolve = resolve_started.elapsed();
         profile_log!(
-            "fontdue UI family '{family}' resolves to '{name}' index={} bytes={} (resolve {resolve:?})",
+            "UI family '{family}' resolves to '{name}' index={} bytes={} (resolve {:?})",
             font.index,
-            font.blob.data().len()
+            font.blob.data().len(),
+            resolve_started.elapsed()
         );
-        parse(
-            &format!("UI '{family}' -> '{name}'"),
-            font.blob.data(),
-            font.index,
-            std::time::Duration::ZERO,
-        );
-    }
-
-    fn parse(label: &str, data: &[u8], index: u32, read: std::time::Duration) {
-        let parse_started = Instant::now();
-        // Same settings as Slint's software renderer (`systemfonts.rs`).
-        let result = fontdue::Font::from_bytes(
-            data,
-            fontdue::FontSettings {
-                collection_index: index,
-                scale: 40.,
-                ..Default::default()
-            },
-        );
-        let parse = parse_started.elapsed();
-        match result {
-            Ok(font) => {
-                let raster_started = Instant::now();
-                let mut drawn = 0usize;
-                for character in SAMPLE_TEXT.chars().filter(|c| !c.is_whitespace()) {
-                    let index = font.lookup_glyph_index(character);
-                    if index != 0 {
-                        let _ = font.rasterize_indexed(index, SAMPLE_PX);
-                        drawn += 1;
-                    }
-                }
-                let raster = raster_started.elapsed();
-                profile_log!(
-                    "fontdue {label}: read={read:?} parse={parse:?} sample_raster={raster:?} \
-                     ({drawn} glyphs) glyphs={} chars={} bytes={}",
-                    font.glyph_count(),
-                    font.chars().len(),
-                    data.len()
-                )
-            }
-            Err(err) => profile_log!("fontdue {label}: parse failed after {parse:?}: {err}"),
-        }
     }
 }

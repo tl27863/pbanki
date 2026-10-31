@@ -1,5 +1,6 @@
 use common::*;
-use inkview::Event;
+use inkview::screen::WhichScreen;
+use inkview_slint::Event;
 
 use std::cell::RefCell;
 use std::os::raw::c_int;
@@ -17,22 +18,30 @@ fn main() {
     let iv = Box::leak(Box::new(inkview::load())) as &'static _;
 
     let (evt_tx, evt_rx) = std::sync::mpsc::channel();
+    let backend_tx = evt_tx.clone();
 
     std::thread::Builder::new()
         .name("pbanki-ui".into())
         .stack_size(8 * 1024 * 1024)
         .spawn({
             move || {
-                if evt_rx.recv().unwrap() != Event::Init {
+                if !matches!(
+                    evt_rx.recv().unwrap(),
+                    Event::InkviewEvent(inkview::Event::Init)
+                ) {
                     panic!("expected init event first");
                 }
 
                 // I hope this thing lives as long as the process
-                let screen = inkview::screen::Screen::new(iv);
-
-                let display = inkview_slint::Backend::new(screen, evt_rx);
-
-                slint::platform::set_platform(Box::new(display)).unwrap();
+                let platform: Box<dyn slint::platform::Platform> = match WhichScreen::new(iv) {
+                    WhichScreen::BB8(screen) => {
+                        Box::new(inkview_slint::Backend::new(screen, backend_tx, evt_rx))
+                    }
+                    WhichScreen::RGB24(screen) => {
+                        Box::new(inkview_slint::Backend::new(screen, backend_tx, evt_rx))
+                    }
+                };
+                slint::platform::set_platform(platform).unwrap();
 
                 let config_path = std::env::var("PBANKI_CONFIG")
                     .unwrap_or_else(|_| "/mnt/ext1/applications/pbanki/config.toml".to_string());
@@ -52,7 +61,7 @@ fn main() {
                 let fonts_timer = ProfileTimer::start();
                 register_catalog_fonts(&session.font_catalog);
                 let fonts_elapsed = fonts_timer.elapsed();
-                spawn_font_benchmark(&session.font_catalog, "Monospace");
+                spawn_font_probe(&session.font_catalog, "Monospace");
 
                 let window_timer = ProfileTimer::start();
                 let ui = Rc::new(MainWindow::new().unwrap());
@@ -139,7 +148,7 @@ fn main() {
 
     inkview::iv_main(iv, {
         move |evt| {
-            if evt_tx.send(evt).is_err() {
+            if evt_tx.send(Event::InkviewEvent(evt)).is_err() {
                 unsafe {
                     iv.CloseApp();
                 }
