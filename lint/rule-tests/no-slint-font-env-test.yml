@@ -1,0 +1,7 @@
+id: pbanki-no-slint-font-env
+valid:
+  - let path = std::env::var("PBANKI_CONFIG");
+  - eprintln!("not SLINT_FONT_PATH related");
+invalid:
+  - unsafe { std::env::set_var("SLINT_FONT_PATH", dirs) };
+  - std::env::set_var("SLINT_DEFAULT_FONT", font);

@@ -6,7 +6,6 @@ import { Palette } from "std-widgets.slint";
 export component PlainButton {
     in property <string> text;
     in property <bool> enabled: true;
-    out property <bool> pressed: self.enabled && touch.pressed;
     callback clicked <=> touch.clicked;
     min-width: max(64px, layout.min-width);
     min-height: max(64px, layout.min-height);

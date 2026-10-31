@@ -1,0 +1,24 @@
+id: pbanki-no-focus-in-init
+valid:
+  - |
+    component A {
+        init => { root.ready = true; }
+    }
+  - |
+    component A {
+        focus-timer := Timer {
+            triggered => { fs.focus(); }
+        }
+    }
+invalid:
+  - |
+    component A {
+        init => { self.focus(); }
+    }
+  - |
+    component A {
+        init => {
+            root.ready = true;
+            fs.focus();
+        }
+    }

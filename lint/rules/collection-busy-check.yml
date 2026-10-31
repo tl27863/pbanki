@@ -1,0 +1,27 @@
+id: pbanki-collection-busy-check
+language: Rust
+severity: hint
+message: UI callback touches the collection without checking `busy`.
+note: |
+  Card jobs and full sync move the collection out of `LearnSession`, so a
+  callback that borrows it while `busy` is true sees `None` or races the job.
+  Return early on `session.busy.get()` first. Experimental: only direct
+  borrows inside the `ui.on_*` closure are seen, not ones in called helpers.
+rule:
+  pattern: $S.collection.$BORROW()
+  inside:
+    kind: closure_expression
+    stopBy: end
+    inside:
+      kind: arguments
+      inside:
+        pattern: $UI.$ON($$$)
+    not:
+      has:
+        pattern: $B.busy.get()
+        stopBy: end
+constraints:
+  BORROW:
+    regex: ^borrow(_mut)?$
+  ON:
+    regex: ^on_

@@ -1,0 +1,7 @@
+id: pbanki-no-wait-for-update-complete
+valid:
+  - screen.partial_update(x, y, w, h);
+  - let busy = screen.is_updating();
+invalid:
+  - screen.wait_for_update_complete();
+  - unsafe { iv.WaitForUpdateComplete(); }

@@ -1,0 +1,14 @@
+# ast-grep project config: `make lint` (or `ast-grep scan` / `ast-grep test`).
+# Rules encode pbAnki invariants from AGENTS.md that rustc and clippy cannot
+# check. Each rule has valid/invalid cases in lint/rule-tests.
+ruleDirs:
+  - lint/rules
+testConfigs:
+  - testDir: lint/rule-tests
+# Slint is not built in: `make lint-parsers` builds the official
+# tree-sitter-slint grammar (pinned in the Makefile) into target/. Native
+# parsers only load with `--custom-languages allow`.
+customLanguages:
+  slint:
+    libraryPath: target/ast-grep/slint.so
+    extensions: [slint]

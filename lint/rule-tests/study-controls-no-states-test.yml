@@ -1,0 +1,29 @@
+id: pbanki-study-controls-no-states
+valid:
+  - |
+    component RatingButton {
+        callback clicked;
+        TouchArea { clicked => { root.clicked(); } }
+        Rectangle { background: #FFFFFF; }
+    }
+invalid:
+  - |
+    component RatingButton {
+        t := TouchArea {}
+        Rectangle { background: t.pressed ? #000000 : #FFFFFF; }
+    }
+  - |
+    component RatingButton {
+        t := TouchArea {}
+        Rectangle { border-width: t.has-hover ? 2px : 1px; }
+    }
+  - |
+    component RatingButton {
+        states [
+            down when t.pressed: { opacity: 0.5; }
+        ]
+    }
+  - |
+    component RatingButton {
+        animate background { duration: 100ms; }
+    }
