@@ -1,0 +1,13 @@
+[package]
+name = "pbanki-desktop"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pbanki-core.workspace = true
+slint = { workspace = true, features = ["backend-winit"] }
+tokio.workspace = true
+
+[features]
+default = []
+profile = ["pbanki-core/profile"]
