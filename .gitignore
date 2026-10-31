@@ -69,5 +69,55 @@ __pycache__/
 # Device log copied from the PocketBook for debugging
 pbanki.log
 
-# PocketBook launcher template
+# PocketBook launcher; only pbAnki itself is tracked
 !scripts/pocketbook/pbanki.app
+
+# Local PB710 SSH/Dropbear helpers; not part of pbAnki
+scripts/pocketbook/SSH-SETUP.md
+scripts/pocketbook/*.sh
+scripts/pocketbook/dropbearmulti-2022.83
+scripts/pocketbook/dropbearmulti-2022.83.sha256
+scripts/pocketbook/libcrypt-2.19.so
+
+# Device backups contain device identity and WiFi secrets; never commit them
+scripts/pocketbook/secure.tar.gz
+scripts/pocketbook/secure.tar.gz.*
+scripts/pocketbook/secure-backup.log
+scripts/pocketbook/usbnet-diag.txt
+scripts/pocketbook/usbnet-probe.txt
+scripts/pocketbook/dropbear-debug.log
+scripts/pocketbook/dropbear-hostkey.log
+scripts/pocketbook/root-script.log
+
+# Copied from the device; rootpassword/settings must not be committed
+scripts/pocketbook/rootpassword.txt
+scripts/pocketbook/password.txt
+scripts/pocketbook/settings.json
+scripts/pocketbook/rootsettings.json
+scripts/pocketbook/pbjb_install_log.txt
+
+# Device-side copies and private/generated key material
+scripts/pocketbook/authorized_keys
+scripts/pocketbook/authorized_keys.*
+scripts/pocketbook/dropbear_rsa_host_key
+scripts/pocketbook/dropbear_rsa_host_key.*
+scripts/pocketbook/pocketbook_rsa
+scripts/pocketbook/pocketbook_rsa.*
+scripts/pocketbook/*.pub
+scripts/pocketbook/dropbearmulti
+scripts/pocketbook/libcrypt.so.1
+scripts/pocketbook/root-script.sh
+scripts/pocketbook/passwd*
+scripts/pocketbook/*.orig
+scripts/pocketbook/*.bak
+scripts/pocketbook/*.failed
+scripts/pocketbook/*.part
+
+# Downloaded archives and logs
+scripts/pocketbook/*.tar.gz
+scripts/pocketbook/*.tgz
+scripts/pocketbook/*.deb
+scripts/pocketbook/*.log
+
+# Local research notes; keep out of the repo unless explicitly added
+fusion-response*.md
