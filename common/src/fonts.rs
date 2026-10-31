@@ -398,7 +398,7 @@ fn face_families(path: &Path) -> io::Result<Vec<(u32, Option<String>)>> {
         }
         let mut offsets = vec![0u8; count as usize * 4];
         file.read_exact(&mut offsets)?;
-        offsets.chunks_exact(4).map(be_u32).collect()
+        offsets.as_chunks::<4>().0.iter().map(|o| u32::from_be_bytes(*o)).collect()
     } else {
         vec![0]
     };
@@ -424,7 +424,7 @@ fn read_name_table(file: &mut File, offset: u32) -> io::Result<Option<Vec<u8>>> 
 
     let mut records = vec![0u8; table_count * 16];
     file.read_exact(&mut records)?;
-    let Some(record) = records.chunks_exact(16).find(|record| &record[0..4] == b"name") else {
+    let Some(record) = records.as_chunks::<16>().0.iter().find(|record| &record[0..4] == b"name") else {
         return Ok(None);
     };
 

@@ -40,14 +40,14 @@ else
 fi
 
 if [ ! -x "$HOME/.cargo/bin/rustup" ]; then
-    echo "installing rustup (1.89.0 + armv7 target)"
+    echo "installing rustup (1.99.1 + armv7 target)"
     tmp="$(mktemp -d)"
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o "$tmp/rustup-init.sh"
     sh "$tmp/rustup-init.sh" -y --no-modify-path --profile minimal \
-        --default-toolchain 1.89.0 --target armv7-unknown-linux-gnueabi
+        --default-toolchain 1.99.1 --target armv7-unknown-linux-gnueabi
 else
-    "$HOME/.cargo/bin/rustup" toolchain install 1.89.0 --profile minimal
-    "$HOME/.cargo/bin/rustup" target add armv7-unknown-linux-gnueabi --toolchain 1.89.0
+    "$HOME/.cargo/bin/rustup" toolchain install 1.99.1 --profile minimal
+    "$HOME/.cargo/bin/rustup" target add armv7-unknown-linux-gnueabi --toolchain 1.99.1
 fi
 
 echo
