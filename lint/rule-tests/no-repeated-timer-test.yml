@@ -1,0 +1,7 @@
+id: pbanki-no-repeated-timer
+valid:
+  - slint::Timer::single_shot(Duration::from_millis(10), move || {});
+  - timer.start(TimerMode::SingleShot, delay, cb);
+invalid:
+  - keyboard_timer.start(slint::TimerMode::Repeated, Duration::from_millis(100), move || {});
+  - timer.start(TimerMode::Repeated, delay, cb);

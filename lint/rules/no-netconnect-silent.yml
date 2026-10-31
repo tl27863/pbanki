@@ -1,0 +1,10 @@
+id: pbanki-no-netconnect-silent
+language: Rust
+severity: error
+message: NetConnectSilent can block for minutes and aborts off-thread.
+note: |
+  On the PB710 a cold radio blocked NetConnectSilent for over a minute, and
+  calling it off-thread returned NET_ABORTED. Use `network::ensure_connected`,
+  which powers the radio and shows the system `NetConnect(NULL)` dialog.
+rule:
+  pattern: $IV.NetConnectSilent($$$)

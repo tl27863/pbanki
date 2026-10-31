@@ -1,0 +1,21 @@
+id: pbanki-checkbox-font-size
+language: slint
+severity: error
+message: CheckBox needs an explicit font-size.
+note: |
+  An unset std-widgets CheckBox font-size is a constant 0px, which
+  EmbedForSoftwareRenderer rasterizes at the font's design size: 380 MB of
+  generated code and an 80 MB binary. Set `font-size: 12px` (Slint's default).
+rule:
+  kind: component
+  has:
+    field: type
+    regex: ^CheckBox$
+  not:
+    has:
+      kind: block
+      has:
+        kind: property_assignment
+        has:
+          field: property
+          regex: ^font-size$

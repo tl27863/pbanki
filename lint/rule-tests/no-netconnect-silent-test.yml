@@ -1,0 +1,5 @@
+id: pbanki-no-netconnect-silent
+valid:
+  - let status = unsafe { iv.NetConnect(std::ptr::null()) };
+invalid:
+  - let status = unsafe { iv.NetConnectSilent(std::ptr::null()) };

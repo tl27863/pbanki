@@ -1,0 +1,12 @@
+id: pbanki-no-wait-for-update-complete
+language: Rust
+severity: error
+message: WaitForUpdateComplete blocks the UI thread until the panel is idle.
+note: |
+  Waiting on content updates blocked the UI thread for 3-4 s per Show Answer
+  on the PB710. Content updates use the damage path; full presents go through
+  `FrontendHooks.full_present` / `inkview_slint::request_full_present`.
+rule:
+  any:
+    - pattern: $S.wait_for_update_complete()
+    - pattern: $IV.WaitForUpdateComplete($$$)

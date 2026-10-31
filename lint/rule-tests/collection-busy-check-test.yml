@@ -1,0 +1,26 @@
+id: pbanki-collection-busy-check
+valid:
+  - |
+    ui.on_update_deck_tree(move || {
+        if session.busy.get() {
+            return;
+        }
+        let col = session.collection.borrow();
+    });
+  - |
+    fn deck_tree(session: &LearnSession) -> DeckTree {
+        let col = session.collection.borrow_mut();
+    }
+  - |
+    slint::Timer::single_shot(delay, move || {
+        let col = session.collection.borrow();
+    });
+invalid:
+  - |
+    ui.on_deck_clicked(move |deck, chars| {
+        let col = session.collection.borrow_mut();
+    });
+  - |
+    ui.on_rate(move |rating, deck, chars| {
+        let card = job.session.collection.borrow().as_ref().map(|c| c.tr());
+    });

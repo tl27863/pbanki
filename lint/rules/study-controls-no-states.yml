@@ -1,0 +1,22 @@
+id: pbanki-study-controls-no-states
+language: slint
+severity: error
+message: Study controls must not have pressed, hover, state, or animated styles.
+note: |
+  Each extra panel update from a pressed/hover/animated style delays the next
+  full-screen update by 0.5-0.8 s on the PB710. Show Answer (PlainButton) and
+  RatingButton stay static.
+files:
+  - crates/core/ui/components/plain_button.slint
+  - crates/core/ui/components/rating_button.slint
+rule:
+  any:
+    - kind: states_definition
+    - kind: transitions_definition
+    - kind: animate_statement
+    - all:
+        - kind: simple_identifier
+        - regex: ^(pressed|has-hover)$
+        - inside:
+            kind: member_access
+            stopBy: end

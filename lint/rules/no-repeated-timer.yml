@@ -1,0 +1,11 @@
+id: pbanki-no-repeated-timer
+language: Rust
+severity: warning
+message: Repeating Slint timers keep waking the e-ink event loop.
+note: |
+  A repeating timer wakes the InkView backend for the whole session (the old
+  100 ms keyboard poll did this). Deliver results from other threads with
+  `slint::invoke_from_event_loop` and use `Timer::single_shot` for delays.
+rule:
+  kind: scoped_identifier
+  regex: (^|::)TimerMode::Repeated$

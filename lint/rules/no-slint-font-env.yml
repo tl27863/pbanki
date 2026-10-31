@@ -1,0 +1,11 @@
+id: pbanki-no-slint-font-env
+language: Rust
+severity: error
+message: SLINT_FONT_PATH / SLINT_DEFAULT_FONT replace the generic font chain.
+note: |
+  In Slint 1.18 these make the registered card fonts the sans-serif chain, so
+  the UI family `Monospace` rendered in Ryo Gothic instead of Roboto. Register
+  fonts with `fonts::register_catalog_fonts` instead.
+rule:
+  kind: string_literal
+  regex: ^"SLINT_(FONT_PATH|DEFAULT_FONT)"$

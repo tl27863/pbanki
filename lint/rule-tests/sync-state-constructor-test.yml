@@ -1,0 +1,7 @@
+id: pbanki-sync-state-constructor
+valid:
+  - ui.set_sync_state(SyncState::error(&err));
+  - let state = SyncState::default();
+invalid:
+  - "let state = SyncState { is_syncing: false, status_message: message.into(), has_error: true, has_warning: false, full_sync_required: false, can_upload: false, can_download: false };"
+  - "let state = crate::SyncState { has_error: true, ..Default::default() };"

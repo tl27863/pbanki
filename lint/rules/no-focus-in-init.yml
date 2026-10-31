@@ -1,0 +1,20 @@
+id: pbanki-no-focus-in-init
+language: slint
+severity: error
+message: Do not take focus in `init`; use a one-shot Timer.
+note: |
+  `init => { self.focus(); }` in a conditionally created screen re-entered the
+  window's geometry binding and aborted with Slint's "Recursion detected".
+  Take key focus from a single-shot `Timer` instead (see LearnScreen).
+rule:
+  kind: callback_event
+  all:
+    - has:
+        field: name
+        regex: ^init$
+    - has:
+        kind: function_call
+        stopBy: end
+        has:
+          field: name
+          regex: ^focus$

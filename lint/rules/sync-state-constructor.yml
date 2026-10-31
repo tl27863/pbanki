@@ -1,0 +1,17 @@
+id: pbanki-sync-state-constructor
+language: Rust
+severity: warning
+message: Build SyncState with its constructors, not a struct literal.
+note: |
+  Use `SyncState::syncing`, `info`, `error`, or `from_result`
+  (crates/core/src/frontend/models.rs) or `SyncState::default()`, so the
+  seven flags stay consistent.
+files:
+  - crates/**/*.rs
+ignores:
+  - crates/core/src/frontend/models.rs
+rule:
+  kind: struct_expression
+  has:
+    field: name
+    regex: (^|::)SyncState$
