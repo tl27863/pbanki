@@ -41,7 +41,7 @@ of the PocketBook Era (PB700, B288, firmware 6.10.3209).
 Host requirements: Python 3.10+, a C compiler, CMake, Ninja, QEMU build
 dependencies (`glib`, `pixman`), and `debugfs` from e2fsprogs. The app build also
 needs Zig and `cargo-zigbuild`; `make emulator-toolchain` installs Zig 0.14.1,
-`cargo-zigbuild` 0.24.0 and Rust 1.89.0 + the `armv7-unknown-linux-gnueabi`
+`cargo-zigbuild` 0.24.0 and Rust 1.99.1 + the `armv7-unknown-linux-gnueabi`
 target under `~/.local` and `~/.cargo`.
 
 ```bash
