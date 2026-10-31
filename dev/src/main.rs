@@ -22,7 +22,7 @@ fn main() {
     let fonts_timer = ProfileTimer::start();
     register_catalog_fonts(&session.font_catalog);
     let fonts_elapsed = fonts_timer.elapsed();
-    spawn_font_benchmark(&session.font_catalog, "Monospace");
+    spawn_font_probe(&session.font_catalog, "Monospace");
 
     let window_timer = ProfileTimer::start();
     let ui = MainWindow::new().unwrap();

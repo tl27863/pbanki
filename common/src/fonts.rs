@@ -276,9 +276,10 @@ impl FontCatalog {
 
 /// Register the configured primary/fallback font files with Slint.
 ///
-/// `SLINT_DEFAULT_FONT` accepts a single file or a directory. We build a
-/// temporary directory of symlinks so all configured families are available to
-/// the Slint font collection without copying multi-megabyte files.
+/// `SLINT_FONT_PATH` accepts directories (`SLINT_DEFAULT_FONT` only a single
+/// file). We build a temporary directory of symlinks so all configured
+/// families are available to the Slint font collection, and become its
+/// generic sans-serif chain, without copying multi-megabyte files.
 ///
 /// Both frontends call this before creating `MainWindow`, so card fonts from
 /// `font_dirs` are available to Slint as well as to the cmap coverage check.
@@ -319,10 +320,10 @@ pub fn register_catalog_fonts(catalog: &FontCatalog) {
     }
 
     unsafe {
-        std::env::set_var("SLINT_DEFAULT_FONT", dir);
+        std::env::set_var("SLINT_FONT_PATH", dir);
     }
     eprintln!(
-        "[font] SLINT_DEFAULT_FONT={} ({} configured font file(s))",
+        "[font] SLINT_FONT_PATH={} ({} configured font file(s))",
         dir.display(),
         registered
     );

@@ -6,26 +6,21 @@ edition = "2024"
 [dependencies]
 anki = { git = "https://github.com/ankitects/anki", branch = "main" }
 anki_proto = { git = "https://github.com/ankitects/anki", branch = "main" }
-slint = { git = "https://github.com/slint-ui/slint", rev = "44208ff", default-features = false, features = ["compat-1-2", "std", "software-renderer-systemfonts", "renderer-software"]}
+slint = { version = "1.18.1", default-features = false, features = ["compat-1-2", "std", "software-renderer-systemfonts", "renderer-software"]}
 tokio = { version = "1", features = ["io-util", "rt", "macros"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip"] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.9"
 toml_edit = "0.23"
 ttf-parser = "0.25"
-# Only for `--features profile`; same versions Slint already links.
-fontdue = { version = "0.9", optional = true }
-fontique = { version = "0.6", optional = true }
+# Only for `--features profile`; same version Slint already links.
+fontique = { version = "0.11", optional = true }
 libc = { version = "0.2", optional = true }
 
 [features]
 default = []
-# Timing instrumentation (`[profile]` log lines) and the background fontdue benchmark.
-profile = ["dep:fontdue", "dep:fontique", "dep:libc"]
+# Timing instrumentation (`[profile]` log lines) and the background font probe.
+profile = ["dep:fontique", "dep:libc"]
 
 [build-dependencies]
-slint-build = { git = "https://github.com/slint-ui/slint", rev = "44208ff" }
-
-# Lazy glyph outlines; see third_party/fontdue/PBANKI-PATCH.md.
-[patch.crates-io]
-fontdue = { path = "../third_party/fontdue" }
+slint-build = "1.18.1"

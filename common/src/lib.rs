@@ -16,5 +16,5 @@ pub use api::{
 pub use config::Config;
 pub use fonts::{FontCatalog, register_catalog_fonts};
 pub use frontend::{FrontendHooks, SyncHooks, init_ui, maybe_auto_sync, wire_callbacks};
-pub use profile::{ProfileTimer, spawn_font_benchmark};
+pub use profile::{ProfileTimer, spawn_font_probe};
 pub use sync::{SyncAction, SyncManager, SyncResult, SyncStatus};

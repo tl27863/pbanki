@@ -171,9 +171,14 @@ export component SettingsScreen {
                     }
                 }
 
+                // Slint's default size, set explicitly: an unset CheckBox
+                // font-size is a constant 0px, which the software-renderer
+                // glyph embedding (common/build.rs) rasterizes at the font's
+                // design size, adding ~60 MB to the binary.
                 auto_sync_cb := CheckBox {
                     height: 32px;
                     vertical-stretch: 0;
+                    font-size: 12px;
                     text: tr.auto_sync;
                     checked: settings.auto_sync;
                     enabled: !sync_state.is_syncing;
@@ -185,6 +190,7 @@ export component SettingsScreen {
                 sync_on_exit_cb := CheckBox {
                     height: 32px;
                     vertical-stretch: 0;
+                    font-size: 12px;
                     text: tr.sync_on_exit;
                     checked: settings.sync_on_exit;
                     enabled: !sync_state.is_syncing;
@@ -196,6 +202,7 @@ export component SettingsScreen {
                 sync_media_cb := CheckBox {
                     height: 32px;
                     vertical-stretch: 0;
+                    font-size: 12px;
                     text: tr.sync_media;
                     checked: settings.sync_media;
                     enabled: !sync_state.is_syncing;

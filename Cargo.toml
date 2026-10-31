@@ -7,10 +7,15 @@ edition = "2024"
 euclid = "0.22.11"
 rgb = "0.8.52"
 common = { path = "./common" }
-slint = { git = "https://github.com/slint-ui/slint", rev = "44208ff", default-features = false, features = ["compat-1-2", "std", "software-renderer-systemfonts", "renderer-software"]}
-inkview = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-eink-refresh" }
-inkview-slint = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-eink-refresh" }
+slint = { version = "1.18.1", default-features = false, features = ["compat-1-2", "std", "software-renderer-systemfonts", "renderer-software"]}
+inkview = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-upstream-master", default-features = false }
+inkview-slint = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-upstream-master", default-features = false }
 tokio = { version = "1", features = ["io-util"] }
+# Not used directly: makes Slint's fontique load libfontconfig at runtime
+# instead of linking it, so the armv7 cross build needs no fontconfig sysroot.
+# Without the library on the device, system fonts are skipped and the UI uses
+# the fonts registered through SLINT_FONT_PATH.
+fontique = { version = "0.11", features = ["fontconfig-dlopen"] }
 
 [features]
 default = []
@@ -30,7 +35,3 @@ incremental = false
 [profile.release.package."*"]
 opt-level = 3
 overflow-checks = false
-
-# Lazy glyph outlines; see third_party/fontdue/PBANKI-PATCH.md.
-[patch.crates-io]
-fontdue = { path = "third_party/fontdue" }
