@@ -274,68 +274,88 @@ impl FontCatalog {
     }
 }
 
+/// Scripts whose fallback chain starts with the registered card fonts.
+const CJK_SCRIPTS: [[u8; 4]; 4] = [*b"Hira", *b"Kana", *b"Hani", *b"Hang"];
+
 /// Register the configured primary/fallback font files with Slint.
 ///
-/// `SLINT_FONT_PATH` accepts directories (`SLINT_DEFAULT_FONT` only a single
-/// file). We build a temporary directory of symlinks so all configured
-/// families are available to the Slint font collection, and become its
-/// generic sans-serif chain, without copying multi-megabyte files.
+/// The files are memory-mapped and added to Slint's shared font collection,
+/// so card text finds them by family name. They are also put first in the
+/// fallback chain for Japanese, Chinese, and Korean text, so UI text in those
+/// scripts does not fall back to a system font without the glyphs
+/// (fireflysung lacks 両). Generic families are left alone: UI text keeps the
+/// system's sans-serif (Roboto on the PB710). `SLINT_FONT_PATH` and
+/// `SLINT_DEFAULT_FONT` would instead make these fonts the sans-serif chain.
 ///
-/// Both frontends call this before creating `MainWindow`, so card fonts from
-/// `font_dirs` are available to Slint as well as to the cmap coverage check.
+/// Both frontends call this after the Slint platform is set up and before
+/// creating `MainWindow`, so card fonts from `font_dirs` are available to Slint
+/// as well as to the cmap coverage check.
 pub fn register_catalog_fonts(catalog: &FontCatalog) {
+    use slint::fontique_011::fontique::{Blob, FallbackKey, Script};
+
     let timer = ProfileTimer::start();
-    let files = catalog.files_to_register();
+    let mut files = catalog.files_to_register();
     if files.is_empty() {
         eprintln!("[font] no configured font files found; trying built-in paths");
-        register_default_font();
-        profile_log!("font registration fallback: {:?}", timer.elapsed());
-        return;
+        files.extend(default_font_file());
     }
 
-    let dir = Path::new("/tmp/pbanki-fonts");
-    let _ = fs::remove_dir_all(dir);
-    if fs::create_dir_all(dir).is_err() {
-        register_default_font();
-        profile_log!("font registration failed after {:?}", timer.elapsed());
-        return;
-    }
-
-    let mut registered = 0;
-    for (index, path) in files.iter().enumerate() {
-        let Some(name) = path.file_name() else {
-            continue;
+    let mut collection = slint::fontique_011::shared_collection();
+    let mut families = Vec::new();
+    for path in &files {
+        let mapped = File::open(path).and_then(|file| unsafe { memmap2::Mmap::map(&file) });
+        let mapped = match mapped {
+            Ok(mapped) => mapped,
+            Err(err) => {
+                eprintln!("[font] {}: {err}", path.display());
+                continue;
+            }
         };
-        let destination = dir.join(format!("{index}-{}", name.to_string_lossy()));
-        if std::os::unix::fs::symlink(path, &destination).is_ok() {
-            registered += 1;
+        let fonts = collection.register_fonts(Blob::new(Arc::new(mapped)), None);
+        if fonts.is_empty() {
+            eprintln!("[font] {}: no fonts found", path.display());
+        }
+        for (family, _) in fonts {
+            if !families.contains(&family) {
+                families.push(family);
+            }
         }
     }
 
-    if registered == 0 {
-        eprintln!("[font] could not link configured fonts; trying built-in paths");
-        register_default_font();
-        profile_log!("font registration failed after {:?}", timer.elapsed());
-        return;
+    // A collection file registers all of its families (Noto Sans CJK: TC, SC,
+    // JP, ...); put the configured ones first, in configured order, so
+    // Japanese text does not pick up Chinese glyph forms.
+    let configured: Vec<String> = catalog
+        .registered_faces()
+        .into_iter()
+        .map(|(family, _, _)| family)
+        .collect();
+    families.sort_by_key(|&family| {
+        collection
+            .family_name(family)
+            .and_then(|name| configured.iter().position(|c| c.eq_ignore_ascii_case(name)))
+            .unwrap_or(usize::MAX)
+    });
+
+    for script in CJK_SCRIPTS {
+        let key = FallbackKey::new(Script::from_bytes(script), None);
+        let system: Vec<_> = collection
+            .fallback_families(key)
+            .filter(|family| !families.contains(family))
+            .collect();
+        collection.set_fallbacks(key, families.iter().copied().chain(system));
     }
 
-    unsafe {
-        std::env::set_var("SLINT_FONT_PATH", dir);
-    }
     eprintln!(
-        "[font] SLINT_FONT_PATH={} ({} configured font file(s))",
-        dir.display(),
-        registered
+        "[font] registered {} font file(s) ({} families) with Slint",
+        files.len(),
+        families.len()
     );
     profile_log!("font registration: {:?}", timer.elapsed());
 }
 
-/// Register the PocketBook Japanese font directly with Slint.
-///
-/// fontconfig does not necessarily expose /adobefonts to the Slint process, so
-/// selecting "Ryo Gothic PlusN" alone can still fall back to fireflysung (which
-/// has no 両 glyph) and stall the UI thread.
-fn register_default_font() {
+/// The PocketBook Japanese font, used when no configured font file exists.
+fn default_font_file() -> Option<PathBuf> {
     const CANDIDATES: &[&str] = &[
         "/mnt/ext1/system/adobe/fonts/RyoGothicPlusN-Medium.otf",
         "/mnt/ext1/system/fonts/RyoGothicPlusN-Medium.otf",
@@ -353,14 +373,8 @@ fn register_default_font() {
         "/ebrmain/fonts",
     ];
 
-    for path in CANDIDATES {
-        if std::path::Path::new(path).is_file() {
-            unsafe {
-                std::env::set_var("SLINT_DEFAULT_FONT", path);
-            }
-            eprintln!("[font] SLINT_DEFAULT_FONT={path}");
-            return;
-        }
+    if let Some(path) = CANDIDATES.iter().map(Path::new).find(|path| path.is_file()) {
+        return Some(path.to_owned());
     }
 
     for dir in DIRS {
@@ -372,17 +386,13 @@ fn register_default_font() {
             if name.contains("ryogothic")
                 && (name.ends_with(".otf") || name.ends_with(".ttf") || name.ends_with(".ttc"))
             {
-                let path = entry.path();
-                unsafe {
-                    std::env::set_var("SLINT_DEFAULT_FONT", &path);
-                }
-                eprintln!("[font] SLINT_DEFAULT_FONT={}", path.display());
-                return;
+                return Some(entry.path());
             }
         }
     }
 
-    eprintln!("[font] Ryo Gothic PlusN not found; using system fallback");
+    eprintln!("[font] Ryo Gothic PlusN not found; using system fonts only");
+    None
 }
 
 /// Family name of every face in a font file, read from the table directory and
@@ -399,7 +409,12 @@ fn face_families(path: &Path) -> io::Result<Vec<(u32, Option<String>)>> {
         }
         let mut offsets = vec![0u8; count as usize * 4];
         file.read_exact(&mut offsets)?;
-        offsets.as_chunks::<4>().0.iter().map(|o| u32::from_be_bytes(*o)).collect()
+        offsets
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|o| u32::from_be_bytes(*o))
+            .collect()
     } else {
         vec![0]
     };
@@ -425,7 +440,12 @@ fn read_name_table(file: &mut File, offset: u32) -> io::Result<Option<Vec<u8>>> 
 
     let mut records = vec![0u8; table_count * 16];
     file.read_exact(&mut records)?;
-    let Some(record) = records.as_chunks::<16>().0.iter().find(|record| &record[0..4] == b"name") else {
+    let Some(record) = records
+        .as_chunks::<16>()
+        .0
+        .iter()
+        .find(|record| &record[0..4] == b"name")
+    else {
         return Ok(None);
     };
 
