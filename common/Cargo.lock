@@ -915,8 +915,8 @@ version = "0.1.0"
 dependencies = [
  "anki",
  "anki_proto",
- "fontique",
  "libc",
+ "memmap2",
  "reqwest",
  "serde",
  "slint",

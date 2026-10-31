@@ -6,21 +6,21 @@ edition = "2024"
 [dependencies]
 anki = { git = "https://github.com/ankitects/anki", branch = "main" }
 anki_proto = { git = "https://github.com/ankitects/anki", branch = "main" }
-slint = { version = "1.18.1", default-features = false, features = ["compat-1-2", "std", "software-renderer-systemfonts", "renderer-software"]}
+slint = { version = "1.18.1", default-features = false, features = ["compat-1-2", "std", "software-renderer-systemfonts", "renderer-software", "unstable-fontique-011"]}
 tokio = { version = "1", features = ["io-util", "rt", "macros"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip"] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.9"
 toml_edit = "0.23"
 ttf-parser = "0.25"
-# Only for `--features profile`; same version Slint already links.
-fontique = { version = "0.11", optional = true }
+# Font files are mapped, not read, when registered with Slint.
+memmap2 = "0.9"
 libc = { version = "0.2", optional = true }
 
 [features]
 default = []
 # Timing instrumentation (`[profile]` log lines) and the background font probe.
-profile = ["dep:fontique", "dep:libc"]
+profile = ["dep:libc"]
 
 [build-dependencies]
 slint-build = "1.18.1"

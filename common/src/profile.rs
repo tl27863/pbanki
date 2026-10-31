@@ -63,11 +63,12 @@ impl ProfileTimer {
 }
 
 /// Logs, off the UI thread, how long reading each registered card font takes
-/// and which font the UI family (`ui_family`, e.g. "Monospace") resolves to.
+/// and which font the UI family (`ui_family`, e.g. "Monospace") resolves to in
+/// Slint's own font collection (the named family, then sans-serif and
+/// system-ui, as Slint queries it).
 ///
-/// Slint reads every registered font file completely when its font collection
-/// is created, and rasterizes glyphs lazily with swash, so the file reads are
-/// the per-font startup cost worth tracking.
+/// Call it on the UI thread after `register_catalog_fonts`; Slint's font
+/// context belongs to that thread.
 ///
 /// The thread starts `PROBE_DELAY` after launch at the lowest CPU priority,
 /// so it does not compete with the first frames. No-op without the `profile`
@@ -77,6 +78,7 @@ pub fn spawn_font_probe(catalog: &FontCatalog, ui_family: &str) {
     {
         let faces = catalog.registered_faces();
         let ui_family = ui_family.to_owned();
+        let collection = slint::fontique_011::shared_collection();
         let spawned = std::thread::Builder::new()
             .name("pbanki-font-probe".into())
             .spawn(move || {
@@ -85,7 +87,7 @@ pub fn spawn_font_probe(catalog: &FontCatalog, ui_family: &str) {
                 unsafe {
                     libc::setpriority(libc::PRIO_PROCESS, 0, 19);
                 }
-                probe::run(faces, &ui_family)
+                probe::run(faces, collection, &ui_family)
             });
         if let Err(err) = spawned {
             profile_log!("font probe thread failed to start: {err}");
@@ -102,15 +104,14 @@ mod probe {
     use std::path::PathBuf;
     use std::time::Instant;
 
-    use fontique::{
-        Attributes, Collection, CollectionOptions, GenericFamily, QueryFamily, QueryStatus,
-        SourceCache,
+    use slint::fontique_011::fontique::{
+        Attributes, Collection, GenericFamily, QueryFamily, QueryStatus, SourceCache,
     };
 
     /// Start delay after launch; the first present happens well before this.
     pub(super) const PROBE_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
 
-    pub(super) fn run(faces: Vec<(String, PathBuf, u32)>, ui_family: &str) {
+    pub(super) fn run(faces: Vec<(String, PathBuf, u32)>, collection: Collection, ui_family: &str) {
         let started = Instant::now();
         for (family, path, index) in faces {
             let read_started = Instant::now();
@@ -125,18 +126,14 @@ mod probe {
             }
         }
 
-        resolve_ui_font(ui_family);
+        resolve_ui_font(collection, ui_family);
         profile_log!("font probe finished in {:?}", started.elapsed());
     }
 
-    /// Repeats Slint's font query for `family` against the system collection:
-    /// the named family, then sans-serif and system-ui.
-    fn resolve_ui_font(family: &str) {
+    /// Repeats Slint's font query for `family`: the named family, then
+    /// sans-serif and system-ui (`FontRequest::query_fontique`).
+    fn resolve_ui_font(mut collection: Collection, family: &str) {
         let resolve_started = Instant::now();
-        let mut collection = Collection::new(CollectionOptions {
-            shared: false,
-            system_fonts: true,
-        });
         let mut cache = SourceCache::default();
         let mut query = collection.query(&mut cache);
         query.set_families([
