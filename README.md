@@ -29,7 +29,7 @@ make release-profile  # release build with [profile] timing logs
 ```
 
 Requires: `cargo-zigbuild` and `zig`. The InkView dependencies come from the
-`pbanki-eink-refresh` fork of `inkview-rs` and are fetched by Cargo
+`pbanki-upstream-master` branch of the `inkview-rs` fork and are fetched by Cargo
 automatically.
 
 ## Emulator (PocketBook Era / PB700)
@@ -265,7 +265,6 @@ common/       # shared Rust logic: API, card jobs, fonts, sync, Slint build
 src/          # PocketBook build (uses the patched inkview-rs fork)
 dev/          # Desktop build (for development)
 ui/           # Slint UI components (shared, not a Cargo package)
-third_party/  # vendored fontdue 0.9.3 with lazy glyph loading (see PBANKI-PATCH.md)
 ```
 
 ## Current Features
