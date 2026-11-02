@@ -12,6 +12,13 @@ export PATH := $(MISE_BIN_PATHS):$(PATH)
 endif
 BASE_TARGET = armv7-unknown-linux-gnueabi
 BASE_SDK = sdk-6-10
+# softfp: hardware VFP/NEON with the soft-float calling convention (GCC's
+# -mfloat-abi=softfp), so the binary still links against the soft-float
+# system libraries. The plain gnueabi target emulates all float math in
+# software (__aeabi_fmul calls). See notes/performance.md, "Float ABI of the
+# PB710 build". `make release BASE_RUSTFLAGS=` builds with software float.
+SOFTFP_RUSTFLAGS = -C target-feature=+vfp4,+neon,-soft-float
+BASE_RUSTFLAGS ?= $(SOFTFP_RUSTFLAGS)
 RK3566_TARGET = armv7-unknown-linux-gnueabihf
 RK3566_SDK = sdk-6-11
 
@@ -25,7 +32,7 @@ define bundle
 endef
 
 all:
-	cargo zigbuild --target $(BASE_TARGET).$(GLIBC) --profile dev -p pbanki --features=$(BASE_SDK)
+	RUSTFLAGS="$(BASE_RUSTFLAGS)" cargo zigbuild --target $(BASE_TARGET).$(GLIBC) --profile dev -p pbanki --features=$(BASE_SDK)
 
 rk3566:
 	cargo zigbuild --target $(RK3566_TARGET).$(GLIBC) --profile dev -p pbanki --features=$(RK3566_SDK)
@@ -34,7 +41,7 @@ release: FEATURES = $(BASE_SDK)
 release-profile: FEATURES = $(BASE_SDK),profile
 
 release release-profile:
-	cargo zigbuild --target $(BASE_TARGET).$(GLIBC) --profile release -p pbanki --features=$(FEATURES)
+	RUSTFLAGS="$(BASE_RUSTFLAGS)" cargo zigbuild --target $(BASE_TARGET).$(GLIBC) --profile release -p pbanki --features=$(FEATURES)
 	$(call bundle,$(BASE_TARGET),target/pocketbook)
 
 release-rk3566: FEATURES = $(RK3566_SDK)
@@ -59,13 +66,10 @@ waveform-probe:
 # own Cargo.lock). Copy the files of target/pocketbook-bench/ to applications/,
 # run blitz-bench.app once, and collect applications/blitz-bench-out/.
 # blitz-bench-mt adds a build with vello_cpu's thread pool to the same bundle.
-# blitz-bench-softfp adds a build with hardware VFP/NEON and the soft-float
-# calling convention (GCC's -mfloat-abi=softfp); the plain gnueabi target
-# emulates all float math in software (__aeabi_fmul calls).
+# blitz-bench-softfp adds a build with the softfp flags of the release build
+# (SOFTFP_RUSTFLAGS); blitz-bench is software float.
 BENCH_MANIFEST = bench/blitz-render/Cargo.toml
 BENCH_TARGET_DIR = target/blitz-bench
-
-SOFTFP_RUSTFLAGS = -C target-feature=+vfp4,+neon,-soft-float
 
 # $(call blitz_bench,<target triple>,<bundle dir>,<features>,<binary name>,<rustflags>)
 define blitz_bench

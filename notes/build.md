@@ -12,7 +12,7 @@
 - After a toolchain bump, do these checks:
   1. Run `make release` and `make release-rk3566`.
   2. Make sure that the glibc version is 2.38 or lower (`readelf -V`).
-  3. Make sure that the float ABI is correct (`readelf -h`): soft-float for base, hard-float for RK3566.
+  3. Make sure that the float ABI is correct (`readelf -h`): soft-float for base, hard-float for RK3566. The base binary must also contain hardware float instructions (softfp, see below).
   4. Measure the PB710 timing baselines again (see `performance.md`).
 - Slint 1.17+ needs Rust 1.92 or newer.
 - `rustc` and `cargo` must be rustup proxies. Pacman `rustup` puts them in `/usr/bin`. The rustup-init install puts them in `~/.cargo/bin`.
@@ -30,10 +30,17 @@ Both builds are for firmware 6.10+ only. The glibc floor is 2.38, which the 6.10
 
 | Device | Float ABI | Make targets | Cargo target and feature | Bundle |
 |---|---|---|---|---|
-| B288/B300 (PB710) | soft | `make` (dev), `make release`, `make release-profile` | `armv7-unknown-linux-gnueabi.2.38`, `sdk-6-10` | `target/pocketbook/` |
+| B288/B300 (PB710) | soft (softfp code) | `make` (dev), `make release`, `make release-profile` | `armv7-unknown-linux-gnueabi.2.38`, `sdk-6-10` | `target/pocketbook/` |
 | RK3566 | hard | `make rk3566`, `make release-rk3566`, `make release-rk3566-profile` | `armv7-unknown-linux-gnueabihf.2.38`, `sdk-6-11` | `target/pocketbook-rk3566/` |
 
 All targets use `cargo zigbuild -p pbanki`. The two bundles have the same file names. The user installs the bundle for the device.
+
+The B288/B300 targets build with `BASE_RUSTFLAGS`, which is `SOFTFP_RUSTFLAGS` (`-C target-feature=+vfp4,+neon,-soft-float`) by default. The code uses hardware VFP/NEON instructions with the soft-float calling convention. The ELF stays `soft-float ABI`, and it links against the soft-float system libraries. Without these flags, the gnueabi target emulates all float math in software. See `performance.md`, "Float ABI of the PB710 build".
+
+- `make release BASE_RUSTFLAGS=` builds the old software-float binary, for example to compare timings.
+- rustc warns that `vfp4`, `neon` and `soft-float` are unstable target features. This is expected.
+- A change of the flags rebuilds all crates for the target.
+- To check a build: `llvm-objdump -d target/pocketbook/pbanki.bin | grep -cE 'v(mul|add|mla)\.f(32|64)'` must not be 0.
 
 ## Release bundle
 

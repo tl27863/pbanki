@@ -62,11 +62,24 @@ Results:
 ## Float ABI of the PB710 build
 
 - `armv7-unknown-linux-gnueabi` emulates all float math in software. Each `f32`/`f64` operation is a call (`__aeabi_fmul`, `__aeabi_fadd`, …).
-- `pbanki.bin` (`make release`) has no hardware float instructions (`llvm-objdump -d` finds 0 `vmul`/`vadd`/`vmla` `.f32`/`.f64`).
+- Without the flags below, `pbanki.bin` has no hardware float instructions (`llvm-objdump -d` finds 0 `vmul`/`vadd`/`vmla` `.f32`/`.f64`). With them it has about 16,700.
 - The PB710 CPU has the hardware (`/proc/cpuinfo`: `vfpv4 neon vfpd32`, CPU part `0xc07` = Cortex-A7).
 - `RUSTFLAGS="-C target-feature=+vfp4,+neon,-soft-float"` gives "softfp": hardware VFP/NEON instructions, with the soft-float calling convention (arguments and results in core registers). The ELF stays `soft-float ABI`, so it links and runs with the soft-float system libraries. rustc 1.99.1 warns that these features are unstable.
 - The precompiled `std` stays software float. Only our crates and dependencies change.
-- Not tried for `pbanki.bin` yet. It can make layout and text in Slint faster. Test on the device before release: launch, study flow, sync.
+- The Blitz bench showed it first: `paint_record` about 10× faster (see below).
+- 2026-11-02: `make release` uses these flags by default (`BASE_RUSTFLAGS` in the Makefile, see `build.md`).
+- Device test (logs `pbanki-20261102-193248.log`, `-193336.log`, PB710, U710.6.11.2124): launch, deck entry, study (show answer, rate), sync, back to the main screen, second launch. No errors.
+- Slint gets no clear gain. Its software renderer does little float math. Renders in ms, softfp against software float (`pbanki-20261102-153933.log`, `-154458.log`):
+
+| | softfp | software float |
+|---|---|---|
+| First full frame | 37, 47 | 39, 48 |
+| Show answer (1144x1305), median (range) | 39 (22–68) | 40 (24–77) |
+| Next card (1144x1437), median (range) | 17 (14–20) | 20 (15–54) |
+| Worker jobs (card load, rating) | 9–25 | 9–55 |
+| Deck entry job | 63–86 | 100 |
+
+- Keep softfp. It costs nothing, the slow outliers are smaller, and the Blitz path needs it.
 
 ## Blitz render bench (PB710)
 
