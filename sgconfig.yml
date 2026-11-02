@@ -1,5 +1,5 @@
 # ast-grep project config: `make lint` (or `ast-grep scan` / `ast-grep test`).
-# Rules encode pbAnki invariants from AGENTS.md that rustc and clippy cannot
+# Rules encode pbAnki invariants from notes/ (see notes/lint.md) that rustc and clippy cannot
 # check. Each rule has valid/invalid cases in lint/rule-tests.
 ruleDirs:
   - lint/rules
