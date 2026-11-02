@@ -39,10 +39,10 @@ make release-rk3566          # RK3566 release bundle
 make release-rk3566-profile  # same, with [profile] timing logs
 ```
 
-Requires rustup, `cargo-zigbuild` (`cargo install cargo-zigbuild --locked`) and
-Zig 0.14.1 (in `PATH`, or unpacked to `~/.local/opt/zig-x86_64-linux-0.14.1`);
-`shell.nix` provides both. rustup installs Rust 1.99.1 with both armv7 targets
-from `rust-toolchain.toml` on first use. The InkView dependencies come from the `inkview-rs` fork and are
+Requires rustup and [mise](https://mise.jdx.dev/): run `mise install` once in
+the repository to get Zig 0.14.1 and `cargo-zigbuild` 0.24.0 (`mise.toml`). The
+Makefile finds them without `mise activate`. rustup installs Rust 1.99.1 with
+both armv7 targets from `rust-toolchain.toml` on first use. The InkView dependencies come from the `inkview-rs` fork and are
 fetched by Cargo automatically.
 
 ## Emulator (PocketBook SDK PC emulator)
