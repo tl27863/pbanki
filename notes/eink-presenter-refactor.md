@@ -26,7 +26,7 @@ Differences from the plan below:
 
 ## Review follow-up
 
-2026-11-02: changes after the architecture and code review of `070ce4f..55c0854`. They are four local commits on `pbanki-device-panel`, not pushed:
+2026-11-02: changes after the architecture and code review of `070ce4f..55c0854`. They are four commits on `pbanki-device-panel`, pushed after the PB710 check:
 
 | Commit | Change |
 |---|---|
@@ -35,7 +35,7 @@ Differences from the plan below:
 | `bfaa0b0` | Frame completeness, private fields, tests |
 | `fc8ff7f` | Docs: `start()`, `EinkOptions`, loop order |
 
-Device check: open. `pbanki-20261102-201659.log` is good (one `issued` and one `verify issued` per transition, no `finalize fallback`). But the deployed `pbanki.bin` was built at 19:52, before these changes, so that log shows the `55c0854` build. Build against the local fork (recipe below), run the checklist, then push. Checks: 37 tests in `inkview-eink` and `inkview-slint`. Clippy for `sdk-6-10` and `sdk-6-11` gives no new warnings. `cargo doc` gives no warnings. In pbAnki (local path patch): the `make lint` clippy commands, `cargo test -p pbanki-desktop --features eink-sim` and `cargo test -p pbanki --features sdk-6-10`.
+Device check: passed (`pbanki-20261102-202534.log`, softfp build against `fc8ff7f`). Launch, the system panel tray, sleep and wake, Settings and Home, deck entry and Home: each gave one `issued` and one `verify issued`. No `finalize fallback`. `first full frame rendered` showed once (no panel height change). Timings are the same as the `55c0854` build. Not tested on the device: the Show + new height + Background case (unit test only). Checks: 37 tests in `inkview-eink` and `inkview-slint`. Clippy for `sdk-6-10` and `sdk-6-11` gives no new warnings. `cargo doc` gives no warnings. In pbAnki (local path patch): the `make lint` clippy commands, `cargo test -p pbanki-desktop --features eink-sim` and `cargo test -p pbanki --features sdk-6-10`.
 
 | Change | Why |
 |---|---|
