@@ -1,0 +1,91 @@
+# E-ink refresh
+
+The backend sends two types of screen update: content updates and full presents. Damage size never decides which type to use. The app requests full presents explicitly.
+
+## Content updates
+
+Content updates are the answer reveal, rating to the next card, and pagination. They use the damage path:
+
+- Panel idle: `PartialUpdate` of the damage bounding box.
+- Panel busy: `DynamicUpdate` for the accumulated damage, up to 100k px. Larger damage waits for the finalizer.
+- Finalizer: when the panel is idle again, it sends one `PartialUpdate` of the union of the waiting damage.
+- Fallback: if the panel stays busy for about 2 s, the finalizer sends `FullUpdate` (flashing). There is no periodic full refresh.
+
+Content updates do not blit the full frame again and do not call `WaitForUpdateComplete`.
+
+## Full presents
+
+Full presents are screen transitions and task show or resume. A full present blits the retained frame again and sends a non-flashing full-screen `PartialUpdate`.
+
+The `Presenter` state machine (`Idle | Pending | Verifying`) owns them:
+
+- Requests come from `Show`, `Foreground`, `Repaint`, and `inkview_slint::request_full_present()`.
+- Requests coalesce. The backend reads all queued events before it renders, so Show plus Foreground is one present.
+- The present waits until the panel is idle, for a maximum of 1.2 s. Then it sends the update anyway.
+- One verification present follows 300 ms after the first present is sent.
+- The request is an atomic latch. The backend reads it after event dispatch and before rendering, so the present contains the new screen.
+
+The app requests presents through `FrontendHooks.full_present`. `crates/pocketbook/src/main.rs` sets it, and the eink-sim frontend sets it. The winit desktop frontend does not. The app requests a present for:
+
+- Deck entry: the loading screen (if shown) and the first card. `PendingJob.full_transition` tells deck entry from rating jobs.
+- Home.
+- Settings open and back, also when Settings opens automatically.
+
+## Why the design is like this
+
+Each item below was a regression on the device.
+
+- InkView can discard a frame that the app draws while InkView switches tasks. `Foreground` alone makes no Slint damage. Thus the screen stayed blank until a touch. Show and resume must present the retained frame again and verify it.
+- Slint marks the whole window (1264×1680) dirty for answer and next-card changes. Thus damage area cannot tell a screen change from a content change. Area thresholds made every rating a full present (1–1.5 s lag). Keep transitions explicit.
+- `WaitForUpdateComplete` on content updates blocked the UI thread for 3–4 s per Show Answer.
+- Count the verification delay from the time the present is sent, not from the request time. A long first render otherwise skipped the verification.
+- Each pressed, hover, or animated style on a study control is one more panel update. It delays the next full-screen update by 0.5–0.8 s. Show Answer (`PlainButton`) and `RatingButton` have no pressed, hover, or animated styles. Keep it that way. The lint rule `pbanki-study-controls-no-states` checks this.
+
+## Update policy
+
+Each update that the backend sends goes through `UpdatePolicy` (`inkview-slint/src/policy.rs`). The policy gives one update mode for each class:
+
+| Class | When | Default |
+|---|---|---|
+| `idle_content` | Damage while the panel is idle | `partial` |
+| `busy_content` | Small damage while the panel is busy | `dynamic` |
+| `finalize` | Waiting damage, once the panel is idle | `partial` |
+| `present` | Full presents | `partial` (`partial-hq` for color panels) |
+| `fallback` | Panel seems stuck | `full` |
+
+- `UpdatePolicy::for_panel` selects `partial-hq` for `present` when `DeviceInfo` reports a color mask.
+- The defaults are the tuned PB710 behavior. Do not change them without PB710 measurements.
+- Zero-area damage sends no update.
+
+Modes:
+
+- An `UpdateKind` name (`full`, `full-hq`, `soft`, `soft-hq`, `partial`, `partial-hq`, `partial-bw`, `partial-du4`, `dynamic`, `dynamic-bw`) calls the named InkView function. The firmware selects the waveform.
+- `ex:<waveform>` (for example `ex:gl16`) calls `UpdateEx` (SDK 6.10+) with that `waveform_type_t` in the low flag bits. Without `UpdateEx`, it uses `partial`.
+- If the firmware does not have a named function, `Screen::update` uses the nearest kind and logs this once.
+
+Override classes for device tests:
+
+```sh
+INKVIEW_SLINT_UPDATES="busy_content=dynamic-bw,present=ex:gl16"
+```
+
+The waveform probe confirmed on the PB710 that `UpdateEx` passes the waveform bits to the panel (see `performance.md`). The doc comment of `Screen::update_ex` still calls this an assumption.
+
+Recommended device tests:
+
+1. Set `busy_content=dynamic-bw`.
+2. Compare `present=ex:gl16` with `partial` for card changes (latency against ghosting).
+3. Record the results in `performance.md`.
+
+The probe shows a floor of about 440 ms for most modes. Thus faster waveforms give little latency gain on the PB710. Ghosting and quality need a visual check.
+
+Not available on purpose: `device_epdc_init()->update`. It goes around InkView.
+
+## Known minor issues
+
+- Rating taps make empty damage. The backend skips zero-area updates, but an empty finalize still logs `update finalize 0x0+0+0`.
+
+## KOReader reference
+
+- `ffi/framebuffer_pocketbook.lua` maps partial to `PartialUpdate`/`PartialUpdateHQ`, full to `FullUpdate`/`FullUpdateHQ`, and fast to `DynamicUpdate`. It waits with `WaitForUpdateComplete`.
+- `ui/uimanager.lua` changes every 6th partial refresh to a full refresh (`FULL_REFRESH_COUNT`, default 6).
