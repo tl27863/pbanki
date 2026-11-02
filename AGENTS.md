@@ -21,7 +21,8 @@ The repository is a Cargo workspace with one `Cargo.lock` and one `target/`. The
   - `src/network.rs` — Wi-Fi. `src/keyboard.rs` — native keyboard wrapper.
   - Features `sdk-6-10` (B288/B300) and `sdk-6-11` (RK3566). Enable exactly one.
 - `crates/desktop/` — package `pbanki-desktop`, the winit frontend for development. `src/eink_sim.rs` is the e-ink simulator (feature `eink-sim`).
-- `scripts/pocketbook/` — the release launcher `pbanki.app`, and SSH/dropbear helper scripts for the device (see `SSH-SETUP.md`).
+- `bench/blitz-render/` — headless Blitz render benchmark, outside the workspace (see `notes/build.md`).
+- `scripts/pocketbook/` — the release launcher `pbanki.app`, the bench launcher `blitz-bench.app`, and SSH/dropbear helper scripts for the device (see `SSH-SETUP.md`).
 - `scripts/sdk-emulator/` — the Docker SDK emulator.
 - `lint/`, `sgconfig.yml` — ast-grep rules.
 - `notes/` — project notes (index below).

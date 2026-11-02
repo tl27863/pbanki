@@ -87,3 +87,25 @@ cargo clippy -p pbanki --features sdk-6-11 --all-targets
 ```
 
 Core has known warnings (collapsible `if`, `CardState` clones).
+
+## Blitz bench
+
+`bench/blitz-render/` is a headless Blitz card render benchmark. It is phase 0 of `deep-research/blitz-on-inkview.md`.
+
+- It is not a workspace member. It has its own `Cargo.lock`, and it builds in `target/blitz-bench/`. Blitz brings its own versions of parley, fontique and skrifa, and the root `Cargo.lock` must not change. `make lint` does not cover it. Run `cargo clippy --manifest-path bench/blitz-render/Cargo.toml --all-targets`.
+- The Blitz crates are git-pinned to the revision that the research note read. Change the revision in all four lines together.
+- Stylo's build script needs `python3` on the host.
+- Desktop run:
+
+  ```sh
+  CARGO_TARGET_DIR=target/blitz-bench cargo run --release --manifest-path bench/blitz-render/Cargo.toml -- \
+      --out /tmp/blitz-bench --font <latin.ttf> --font <japanese.otf>
+  ```
+
+- Device: `make blitz-bench` (soft-float). Two variants go into the same bundle:
+  - `make blitz-bench-softfp`: hardware VFP/NEON with the soft-float calling convention (see `performance.md`, "Float ABI of the PB710 build").
+  - `make blitz-bench-mt`: vello_cpu's thread pool. It is slower on the PB710.
+- `make blitz-bench-rk3566` makes a hard-float bundle.
+- Copy the files of `target/pocketbook-bench/` to `/mnt/ext1/applications/` and start `blitz-bench.app`. The screen does not change. The launcher runs every `blitz-bench*.bin` next to it and writes `applications/blitz-bench-out/<binary>/blitz-bench.log` and PGM frames. Remove old variants from the device first, or it runs them too.
+- Without `--font`, it loads Ryo Gothic and a Roboto from the firmware font directories. `--cards <dir>` adds `.html` files, for example real cards.
+- Known render gaps at this revision: `<ruby>` is laid out inline. `<b>` needs a bold font file, because synthetic bold is behind Blitz's `font-embolden` feature.

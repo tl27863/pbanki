@@ -55,6 +55,40 @@ waveform-probe:
 	cp $(INKVIEW_RS)/target/$(BASE_TARGET)/release/examples/waveform_probe target/pocketbook-probe/waveform-probe.app
 	ls -lh target/pocketbook-probe/waveform-probe.app
 
+# Headless Blitz render benchmark (bench/blitz-render, outside the workspace,
+# own Cargo.lock). Copy the files of target/pocketbook-bench/ to applications/,
+# run blitz-bench.app once, and collect applications/blitz-bench-out/.
+# blitz-bench-mt adds a build with vello_cpu's thread pool to the same bundle.
+# blitz-bench-softfp adds a build with hardware VFP/NEON and the soft-float
+# calling convention (GCC's -mfloat-abi=softfp); the plain gnueabi target
+# emulates all float math in software (__aeabi_fmul calls).
+BENCH_MANIFEST = bench/blitz-render/Cargo.toml
+BENCH_TARGET_DIR = target/blitz-bench
+
+SOFTFP_RUSTFLAGS = -C target-feature=+vfp4,+neon,-soft-float
+
+# $(call blitz_bench,<target triple>,<bundle dir>,<features>,<binary name>,<rustflags>)
+define blitz_bench
+	CARGO_TARGET_DIR=$(BENCH_TARGET_DIR) RUSTFLAGS="$(5)" cargo zigbuild --manifest-path $(BENCH_MANIFEST) --target $(1).$(GLIBC) --release $(3)
+	mkdir -p $(2)
+	cp $(BENCH_TARGET_DIR)/$(1)/release/blitz-bench $(2)/$(4)
+	cp scripts/pocketbook/blitz-bench.app $(2)/blitz-bench.app
+	chmod +x $(2)/blitz-bench.app $(2)/$(4)
+	ls -lh $(2)/blitz-bench.app $(2)/$(4)
+endef
+
+blitz-bench:
+	$(call blitz_bench,$(BASE_TARGET),target/pocketbook-bench,,blitz-bench.bin)
+
+blitz-bench-mt:
+	$(call blitz_bench,$(BASE_TARGET),target/pocketbook-bench,--features mt,blitz-bench-mt.bin)
+
+blitz-bench-softfp:
+	$(call blitz_bench,$(BASE_TARGET),target/pocketbook-bench,,blitz-bench-softfp.bin,$(SOFTFP_RUSTFLAGS))
+
+blitz-bench-rk3566:
+	$(call blitz_bench,$(RK3566_TARGET),target/pocketbook-rk3566-bench,,blitz-bench.bin)
+
 # SDK PC emulator (x86-64 InkView in a container): SDK=6.10 (B288, PB700
 # profile, default) or SDK=6.11 (RK3566, 1030 profile). See
 # scripts/sdk-emulator/lib.sh for PROFILE, RESMODE and EMU_NET.
@@ -70,7 +104,7 @@ sdk-emulator-build:
 sdk-emulator: sdk-emulator-build
 	./scripts/sdk-emulator/run.sh
 
-.PHONY: all rk3566 waveform-probe release release-profile release-rk3566 release-rk3566-profile sdk-emulator-setup sdk-emulator-build sdk-emulator lint lint-parsers
+.PHONY: all rk3566 waveform-probe blitz-bench blitz-bench-mt blitz-bench-softfp blitz-bench-rk3566 release release-profile release-rk3566 release-rk3566-profile sdk-emulator-setup sdk-emulator-build sdk-emulator lint lint-parsers
 
 # Lint: clippy plus the ast-grep rules in lint/ (see sgconfig.yml). ast-grep
 # comes from `cargo install ast-grep --locked`, the Slint parser build needs

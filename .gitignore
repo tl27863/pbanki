@@ -70,8 +70,12 @@ __pycache__/
 pbanki.log
 pbanki-*.log
 
-# PocketBook launcher; only pbAnki itself is tracked
+# Blitz bench output copied from the device (results go to notes/performance.md)
+bench/blitz-bench-out/
+
+# PocketBook launchers; only pbAnki and the Blitz bench are tracked
 !scripts/pocketbook/pbanki.app
+!scripts/pocketbook/blitz-bench.app
 
 # Local PB710 SSH/Dropbear helpers; not part of pbAnki
 scripts/pocketbook/SSH-SETUP.md
