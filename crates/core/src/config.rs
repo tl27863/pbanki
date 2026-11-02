@@ -211,7 +211,7 @@ impl Config {
             .any(|key| !general_has_key(&contents, key));
             if needs_save {
                 if let Err(err) = config.save() {
-                    eprintln!("Could not add default settings to config: {err}");
+                    tracing::warn!("Could not add default settings to config: {err}");
                 }
             }
 
@@ -228,7 +228,7 @@ impl Config {
     /// the defaults, saved to `path` on the next change.
     pub fn load_or_default(path: &str) -> Self {
         Self::load_or_create(path).unwrap_or_else(|err| {
-            eprintln!("Config error: {err:?}, using defaults");
+            tracing::warn!("Config error: {err:?}, using defaults");
             Config {
                 path: path.into(),
                 ..Config::default()

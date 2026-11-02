@@ -17,8 +17,9 @@ use keyboard::KeyboardKind;
 const DEFAULT_CONFIG_PATH: &str = "/mnt/ext1/applications/pbanki/config.toml";
 
 fn main() {
+    pbanki_core::logging::init();
     std::panic::set_hook(Box::new(|info| {
-        eprintln!("[panic] {info}");
+        tracing::error!("[panic] {info}");
     }));
 
     let iv = Box::leak(Box::new(inkview::load())) as &'static _;
@@ -98,16 +99,15 @@ fn main() {
 /// hwconfig DPI disagrees with the DPI the backend scales by.
 fn log_device(iv: &Inkview) -> DeviceInfo {
     let device = DeviceInfo::query(iv);
-    eprintln!("[device] {device}");
+    tracing::info!("[device] {device}");
     let screen_dpi = iv.get_screen_dpi.as_ref().ok().map(|f| unsafe { (*f)() });
     if let (Some(display), Some(screen_dpi)) = (device.display, screen_dpi)
         && display.dpi != 0
         && i64::from(display.dpi) != i64::from(screen_dpi)
     {
-        eprintln!(
-            "[device] warning: hwconfig dpi={} but get_screen_dpi()={screen_dpi}",
-            display.dpi
-        );
+        // Bound first: tracing's macros shadow the name `display`.
+        let hw_dpi = display.dpi;
+        tracing::warn!("[device] warning: hwconfig dpi={hw_dpi} but get_screen_dpi()={screen_dpi}");
     }
     device
 }

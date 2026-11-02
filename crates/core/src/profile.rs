@@ -16,7 +16,7 @@ use crate::fonts::FontCatalog;
 #[macro_export]
 macro_rules! profile_log {
     ($($arg:tt)*) => {
-        eprintln!("[profile] {}", format_args!($($arg)*))
+        $crate::tracing::info!("[profile] {}", format_args!($($arg)*))
     };
 }
 
@@ -27,7 +27,7 @@ macro_rules! profile_log {
     ($($arg:tt)*) => {
         if false {
             // Keeps the arguments type-checked and "used" without emitting code.
-            eprintln!("[profile] {}", format_args!($($arg)*))
+            $crate::tracing::info!("[profile] {}", format_args!($($arg)*))
         }
     };
 }

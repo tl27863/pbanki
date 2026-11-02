@@ -4,8 +4,13 @@ pub mod app;
 pub mod config;
 pub mod fonts;
 pub mod frontend;
+pub mod logging;
 pub mod profile;
 pub mod session;
 pub mod study;
 pub mod sync;
 mod text;
+
+// For `profile_log!`, which expands in the calling crate.
+#[doc(hidden)]
+pub use tracing;

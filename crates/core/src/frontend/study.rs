@@ -122,7 +122,7 @@ pub(super) fn wire(
             let deck_id = deck.id;
             let set_deck = session.current_deck_id.get() != Some(deck_id);
             let fonts = session.font_catalog.clone();
-            eprintln!("[deck {deck_id}] entering, set_deck={set_deck}");
+            tracing::info!("[deck {deck_id}] entering, set_deck={set_deck}");
 
             spawn_card_job(
                 ui_weak.clone(),

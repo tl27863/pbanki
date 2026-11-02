@@ -55,7 +55,7 @@ impl Timings {
                     "full" => timings.full = ms,
                     "partial" => timings.partial = ms,
                     "fast" => timings.fast = ms,
-                    other => eprintln!("[eink-sim] ignoring PBANKI_EINK_SIM_MS key '{other}'"),
+                    other => tracing::warn!("[eink-sim] ignoring PBANKI_EINK_SIM_MS key '{other}'"),
                 }
             }
         }
@@ -198,7 +198,7 @@ pub struct SimScreen {
 impl SimScreen {
     pub fn new(panel: Arc<Mutex<Panel>>) -> Self {
         let timings = Timings::from_env();
-        eprintln!("[eink-sim] {WIDTH}x{HEIGHT} at {DPI} dpi, timings {timings:?}");
+        tracing::info!("[eink-sim] {WIDTH}x{HEIGHT} at {DPI} dpi, timings {timings:?}");
         Self {
             framebuffer: vec![BB8(255); WIDTH * HEIGHT],
             panel,
@@ -212,7 +212,12 @@ impl SimScreen {
         } else {
             let x = (x.max(0) as usize).min(WIDTH);
             let y = (y.max(0) as usize).min(HEIGHT);
-            (x, y, (w as usize).min(WIDTH - x), (h as usize).min(HEIGHT - y))
+            (
+                x,
+                y,
+                (w as usize).min(WIDTH - x),
+                (h as usize).min(HEIGHT - y),
+            )
         };
         if w == 0 || h == 0 {
             return;
@@ -229,7 +234,10 @@ impl SimScreen {
         let started = Instant::now();
         let mut panel = self.panel.lock().unwrap();
         // Updates complete in order, as one controller would run them.
-        let after = panel.pending.back().map_or(started, |u| u.done_at.max(started));
+        let after = panel
+            .pending
+            .back()
+            .map_or(started, |u| u.done_at.max(started));
         panel.pending.push_back(PendingUpdate {
             x,
             y,

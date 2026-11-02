@@ -13,6 +13,7 @@ The rules check invariants that clippy cannot check.
 | Rule | Language | Check |
 |---|---|---|
 | `pbanki-no-repeated-timer` | Rust | No repeating Slint timers |
+| `pbanki-no-eprintln` | Rust | No print macros outside `mod tests` and `build.rs`. Use `tracing` |
 | `pbanki-no-wait-for-update-complete` | Rust | No `wait_for_update_complete` or `WaitForUpdateComplete` |
 | `pbanki-no-netconnect-silent` | Rust | No `NetConnectSilent` |
 | `pbanki-no-slint-font-env` | Rust | No `SLINT_FONT_PATH` or `SLINT_DEFAULT_FONT` |

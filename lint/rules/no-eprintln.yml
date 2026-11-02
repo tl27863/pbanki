@@ -1,0 +1,24 @@
+id: pbanki-no-eprintln
+language: Rust
+severity: error
+message: Log through `tracing` (info!/warn!/error!), not print macros.
+note: |
+  `pbanki_core::logging::init` installs one subscriber with local timestamps,
+  levels, and the `PBANKI_LOG` filter; anki's `tracing` and inkview-rs's `log`
+  events go through it too. Print macros bypass the filter and have no
+  timestamp. Tests (`mod tests`) and build scripts may print; anything else
+  needs `// ast-grep-ignore: pbanki-no-eprintln` and a reason.
+ignores:
+  - "**/build.rs"
+rule:
+  kind: macro_invocation
+  has:
+    field: macro
+    regex: ^(std::)?e?print(ln)?$
+  not:
+    inside:
+      kind: mod_item
+      has:
+        field: name
+        regex: ^tests$
+      stopBy: end

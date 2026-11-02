@@ -21,6 +21,7 @@ fn load_config() -> Config {
 
 #[cfg(not(feature = "eink-sim"))]
 fn main() {
+    pbanki_core::logging::init();
     let app = app::start(load_config(), false, FrontendHooks::default());
     let _ = app.run();
 }
@@ -30,6 +31,8 @@ fn main() {
 #[cfg(feature = "eink-sim")]
 fn main() {
     use std::rc::Rc;
+
+    pbanki_core::logging::init();
 
     use inkview_slint::{Backend, Event};
 

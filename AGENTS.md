@@ -14,7 +14,7 @@ The repository is a Cargo workspace with one `Cargo.lock` and one `target/`. The
   - `text.rs` — HTML stripping and pagination.
   - `sync/` — `mod.rs` (sync, full sync, media sync), `client.rs` (`SyncManager`), `auth.rs` (login, endpoint), `backup.rs` (backup before a full download).
   - `frontend/` — Slint wiring: `mod.rs` (`FrontendHooks`, `init_ui`, `wire_callbacks`), `card_jobs.rs`, `study.rs`, `settings.rs`, `sync.rs` (`SyncHooks`), `models.rs` (view models, `SyncState` constructors).
-  - `config.rs`, `fonts.rs`, `profile.rs`.
+  - `config.rs`, `fonts.rs`, `logging.rs` (log subscriber), `profile.rs`.
   - `ui/` — Slint sources.
 - `crates/pocketbook/` — package and binary `pbanki`, the PocketBook frontend over `inkview-rs`.
   - `src/main.rs` — platform setup, hooks, device log, panel and update-policy options.
@@ -73,6 +73,7 @@ Dev sync server: `make -C ../pbanki-sync-server up`. The endpoint is `http://127
 | `notes/emulators.md` | SDK emulator, eink-sim, waveform probe |
 | `notes/inkview-backend.md` | The inkview-rs fork, rendering, system panel, device info |
 | `notes/eink-refresh.md` | Update path, full presents, update policy, and why they are like this |
+| `notes/logging.md` | Log output, levels, `PBANKI_LOG` filter |
 | `notes/eink-logs.md` | `[eink …]` log lines and how to read them |
 | `notes/performance.md` | Profiling, PB710 baselines, waveform probe results |
 | `notes/inkview-single-thread-pump.md` | Fallback design for InkView update stalls (not implemented) |
