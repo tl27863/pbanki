@@ -26,7 +26,7 @@ About the panel line:
 | `issued reason=… after=… waited=… attempts=… busy=… blit=…` | The full present was sent. |
 | `verify issued …` | The verification present was sent. |
 | `panel busy→idle after …ms` | The panel became idle. The backend checks every 50 ms while busy. |
-| `first full frame rendered in …ms` | First render after start. |
+| `first full frame rendered in …ms` | First complete render after start, and after each `panel height … -> …` line. A present waits for this line. |
 | `slow render: …` | A render took a long time. |
 | `update partial\|dynamic\|finalize WxH+X+Y` | One content update. |
 | `damage … deferred to finalize (panel busy)` | Damage waits for the finalizer. |

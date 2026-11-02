@@ -6,7 +6,8 @@ pbAnki uses `inkview-slint` from the fork `tl27863/inkview-rs`. The fork develop
 
 | Branch | Content | Role |
 |---|---|---|
-| `pbanki-device-panel` | `pbanki-upstream-master` at `3a651ab`, plus device info, the update API, panel modes, `EinkScreen`, `UpdatePolicy`, the waveform probe | Used by the root `Cargo.toml` |
+| `pbanki-device-panel` | `pbanki-upstream-master` at `3a651ab`, plus device info, the update API, panel modes, `EinkScreen`, `UpdatePolicy`, the waveform probe, and the presenter refactor (`inkview-eink` crate, `55c0854`). Review follow-up `b9ae258..fc8ff7f` is local, not pushed (see `eink-presenter-refactor.md`) | Used by the root `Cargo.toml`. Before the refactor: `070ce4f` (rollback target) |
+| `pbanki-eink-core` | The presenter refactor (`55c0854`), merged into `pbanki-device-panel` | Kept for reference |
 | `pbanki-upstream-master` | Upstream master `15cdb98` (Sep 2026), plus `a2beb6c` (pixel formats, `copy_rect`, wake), `6765a59` (presenter, damage policy, proxy, Slint 1.18.1), `3a651ab` (DPI-only scale factor) | Rollback target for `pbanki-device-panel` |
 | `pbanki-eink-refresh` | Upstream `34ae238` plus Slint `44208ff` | Older rollback target, kept unchanged |
 
@@ -79,7 +80,7 @@ Backend behavior:
 - The backend keeps `Screen::panel_height()` rows at the top free. The Slint window and the retained buffer are `width × (height - top)`. All copies and update rectangles move down by `top`.
 - A full present blits only the content rows. Then it calls `DrawPanel(NULL, NULL, NULL, -1)` before its full-screen update.
 - The backend does not forward pointer presses with `y < top`. InkView handles the panel and its tray. In the emulator, these taps never get to the app.
-- `Show` and `Repaint` read the height again. If it changed, the backend resizes and renders the full frame.
+- `Show`, `Repaint` and `Foreground` read the height again. If it changed, the backend resizes and renders the full frame. The new retained frame is not complete until that render. A present waits for it, also when a `Background` came in between.
 
 Panel height:
 
