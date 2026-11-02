@@ -14,24 +14,70 @@ if [ -z "$DIR" ] || [ ! -d "$DIR" ]; then
     exit 1
 fi
 
+# One log file per launch: pbanki/logs/pbanki-YYYYMMDD-HHMMSS.log. The names
+# sort by start time; the newest KEEP_LOGS files are kept.
 LOG_DIR="$DIR/pbanki/logs"
-LOG="$LOG_DIR/pbanki.log"
+KEEP_LOGS=20
 PIDFILE="/tmp/pbanki.pid"
 
-# Keep the log inside the pbanki data folder. Create it when missing; if the
-# app partition is read-only or full, fall back to /tmp so pbAnki still starts.
-# The subshell keeps a redirection failure on the special builtin `:` from
-# aborting the whole script (POSIX makes that fatal).
-PRIMARY_LOG="$LOG"
 if mkdir -p "$LOG_DIR" 2>/dev/null; then
-    # One-time move from the old location beside the launcher.
-    if [ -f "$DIR/pbanki.log" ] && [ ! -e "$LOG" ]; then
-        mv -f "$DIR/pbanki.log" "$LOG" 2>/dev/null || true
-    fi
+    # One-time move of the single log of older launchers (beside the launcher,
+    # then in pbanki/logs/). The name does not match the session pattern, so
+    # pruning never deletes it.
+    for old in "$LOG_DIR/pbanki.log" "$DIR/pbanki.log"; do
+        if [ -f "$old" ] && [ ! -e "$LOG_DIR/pbanki-legacy.log" ]; then
+            mv -f "$old" "$LOG_DIR/pbanki-legacy.log" 2>/dev/null || true
+        fi
+    done
 fi
 
+# A second launch should focus the running window instead of opening the
+# collection twice. /tmp survives crashes, so validate a stale pid first. The
+# pidfile holds the pid and, on its second line, the session log of that
+# instance, which receives the activation messages.
+if [ -f "$PIDFILE" ]; then
+    running=$(sed -n 1p "$PIDFILE" 2>/dev/null)
+    running_log=$(sed -n 2p "$PIDFILE" 2>/dev/null)
+    case "$running" in
+        '' | *[!0-9]*) running= ;;
+    esac
+    if [ -z "$running_log" ] || ! ( : >>"$running_log" ) 2>/dev/null; then
+        running_log=/dev/null
+    fi
+    if [ -n "$running" ] && [ -d "/proc/$running" ]; then
+        cmdline=$(tr '\0' ' ' <"/proc/$running/cmdline" 2>/dev/null)
+        case "$cmdline" in
+            *pbanki.app* | *pbanki.bin*)
+                printf '%s already running (pid %s), activating\n' \
+                    "$(date '+%Y-%m-%d %H:%M:%S')" "$running" >>"$running_log"
+                iv2sh=/usr/bin/iv2sh
+                [ -x "$iv2sh" ] || iv2sh=/ebrmain/bin/iv2sh
+                if [ -x "$iv2sh" ]; then
+                    if ! "$iv2sh" SetActiveTask "$running" 0 >>"$running_log" 2>&1; then
+                        printf '%s warning: could not activate pid %s\n' \
+                            "$(date '+%Y-%m-%d %H:%M:%S')" "$running" >>"$running_log"
+                    fi
+                else
+                    printf '%s warning: iv2sh not found; cannot activate pid %s\n' \
+                        "$(date '+%Y-%m-%d %H:%M:%S')" "$running" >>"$running_log"
+                fi
+                exit 0
+                ;;
+        esac
+    fi
+    rm -f "$PIDFILE"
+fi
+
+SESSION="pbanki-$(date '+%Y%m%d-%H%M%S')"
+LOG="$LOG_DIR/$SESSION.log"
+[ -e "$LOG" ] && LOG="$LOG_DIR/$SESSION-$$.log"
+
+# If the app partition is read-only or full, fall back to /tmp so pbAnki still
+# starts. The subshell keeps a redirection failure on the special builtin `:`
+# from aborting the whole script (POSIX makes that fatal).
+PRIMARY_LOG="$LOG"
 if ! ( : >>"$LOG" ) 2>/dev/null; then
-    LOG="/tmp/pbanki.log"
+    LOG="/tmp/$SESSION-$$.log"
     if ! ( : >>"$LOG" ) 2>/dev/null; then
         printf '%s error: cannot write %s or %s\n' \
             "$(date '+%Y-%m-%d %H:%M:%S')" "$PRIMARY_LOG" "$LOG" >&2
@@ -41,46 +87,20 @@ if ! ( : >>"$LOG" ) 2>/dev/null; then
         "$(date '+%Y-%m-%d %H:%M:%S')" "$PRIMARY_LOG" "$LOG" >>"$LOG"
 fi
 
-# A second launch should focus the running window instead of opening the
-# collection twice. /tmp survives crashes, so validate a stale pid first.
-if [ -f "$PIDFILE" ]; then
-    running=$(cat "$PIDFILE" 2>/dev/null)
-    case "$running" in
-        '' | *[!0-9]*) running= ;;
-    esac
-    if [ -n "$running" ] && [ -d "/proc/$running" ]; then
-        cmdline=$(tr '\0' ' ' <"/proc/$running/cmdline" 2>/dev/null)
-        case "$cmdline" in
-            *pbanki.app* | *pbanki.bin*)
-                printf '%s already running (pid %s), activating\n' \
-                    "$(date '+%Y-%m-%d %H:%M:%S')" "$running" >>"$LOG"
-                iv2sh=/usr/bin/iv2sh
-                [ -x "$iv2sh" ] || iv2sh=/ebrmain/bin/iv2sh
-                if [ -x "$iv2sh" ]; then
-                    if ! "$iv2sh" SetActiveTask "$running" 0 >>"$LOG" 2>&1; then
-                        printf '%s warning: could not activate pid %s\n' \
-                            "$(date '+%Y-%m-%d %H:%M:%S')" "$running" >>"$LOG"
-                    fi
-                else
-                    printf '%s warning: iv2sh not found; cannot activate pid %s\n' \
-                        "$(date '+%Y-%m-%d %H:%M:%S')" "$running" >>"$LOG"
-                fi
-                exit 0
-                ;;
-        esac
-    fi
-    rm -f "$PIDFILE"
-fi
-
-# Cap the log at 1 MiB, keeping the tail where crashes are.
-size=$(wc -c <"$LOG" 2>/dev/null || echo 0)
-if [ "$size" -gt 1048576 ] 2>/dev/null; then
-    if tail -c 262144 "$LOG" >"$LOG.new"; then
-        mv -f "$LOG.new" "$LOG" || rm -f "$LOG.new"
-    else
-        rm -f "$LOG.new"
-    fi
-fi
+# Deletes the oldest session logs beyond KEEP_LOGS. A function, so `set --`
+# does not replace the launcher's arguments. The current log is never deleted,
+# also if a wrong clock makes it sort first.
+prune_logs() {
+    set -- "$LOG_DIR"/pbanki-[0-9]*.log
+    [ -e "$1" ] || return 0
+    excess=$(($# - KEEP_LOGS))
+    while [ "$excess" -gt 0 ]; do
+        [ "$1" = "$LOG" ] || rm -f "$1"
+        shift
+        excess=$((excess - 1))
+    done
+}
+prune_logs
 
 printf '%s starting pbAnki (pid %s) from %s\n' \
     "$(date '+%Y-%m-%d %H:%M:%S')" "$$" "$DIR" >>"$LOG"
@@ -99,7 +119,7 @@ if ! cd "$DIR"; then
     exit 1
 fi
 
-if ! printf '%s\n' "$$" >"$PIDFILE" 2>/dev/null; then
+if ! printf '%s\n%s\n' "$$" "$LOG" >"$PIDFILE" 2>/dev/null; then
     printf '%s warning: cannot write %s; single-instance guard disabled\n' \
         "$(date '+%Y-%m-%d %H:%M:%S')" "$PIDFILE" >>"$LOG"
 fi

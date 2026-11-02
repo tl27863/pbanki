@@ -66,8 +66,9 @@ target
 __pycache__/
 *.pyc
 
-# Device log copied from the PocketBook for debugging
+# Device logs copied from the PocketBook for debugging
 pbanki.log
+pbanki-*.log
 
 # PocketBook launcher; only pbAnki itself is tracked
 !scripts/pocketbook/pbanki.app

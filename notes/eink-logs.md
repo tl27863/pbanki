@@ -1,6 +1,6 @@
 # E-ink logs
 
-The backend writes `[eink +<ms>]` lines to `pbanki/logs/pbanki.log`. The time is from backend start.
+The backend writes `[eink +<ms>]` lines to stderr. The launcher writes them to the session log `pbanki/logs/pbanki-YYYYMMDD-HHMMSS.log` (one file per launch). The time is from backend start.
 
 ## Startup lines
 

@@ -16,7 +16,7 @@ With the feature:
 - `spawn_font_probe` starts 10 s after launch at nice 19. It logs:
   - The read time and size of each registered card font (Slint reads them fully at startup): `[profile] font '…' … read=… bytes=…`.
   - The font that `Monospace` resolves to in the shared collection of Slint, in Slint's order (named family, sans-serif, system-ui): `[profile] UI family '…' resolves to …`.
-- Logs go to `pbanki.log` on the eMMC. Thus the times include the logging overhead.
+- Logs go to the session log in `pbanki/logs/` on the eMMC. Thus the times include the logging overhead.
 
 ## PB710 baselines
 
