@@ -8,7 +8,7 @@ use slint::ComponentHandle;
 use super::FrontendHooks;
 use super::card_jobs::{DECK_LOADING_DELAY, Loading, RATING_LOADING_DELAY, spawn_card_job};
 use super::models::deck_tree;
-use super::sync::schedule_sync;
+use super::sync::{SyncTrigger, schedule_sync};
 use crate::MainWindow;
 use crate::config::Config;
 use crate::session::LearnSession;
@@ -42,6 +42,7 @@ pub(super) fn wire(
                     session.clone(),
                     config.clone(),
                     hooks.clone(),
+                    SyncTrigger::LeaveStudy,
                 );
             }
         });

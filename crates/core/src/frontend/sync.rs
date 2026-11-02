@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use slint::ComponentHandle;
 
@@ -66,6 +66,27 @@ impl Drop for SyncGuard {
     }
 }
 
+/// What started a normal sync; only used in log lines.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum SyncTrigger {
+    /// The reload icon on Home.
+    Manual,
+    /// `auto_sync` at startup.
+    Startup,
+    /// `sync_on_exit`, after leaving a study session.
+    LeaveStudy,
+}
+
+impl SyncTrigger {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Startup => "startup",
+            Self::LeaveStudy => "after study",
+        }
+    }
+}
+
 pub fn maybe_auto_sync(
     ui: &MainWindow,
     session: Rc<LearnSession>,
@@ -77,7 +98,7 @@ pub fn maybe_auto_sync(
         config.ankiweb.auto_sync && config.ankiweb.has_credentials()
     };
     if auto_sync {
-        schedule_sync(ui.as_weak(), session, config, hooks);
+        schedule_sync(ui.as_weak(), session, config, hooks, SyncTrigger::Startup);
     }
 }
 
@@ -98,6 +119,7 @@ pub(super) fn wire(
                 session.clone(),
                 config.clone(),
                 hooks.clone(),
+                SyncTrigger::Manual,
             );
         });
     }
@@ -124,17 +146,21 @@ pub(super) fn schedule_sync(
     session: Rc<LearnSession>,
     config: Rc<RefCell<Config>>,
     hooks: FrontendHooks,
+    trigger: SyncTrigger,
 ) {
+    let kind = trigger.name();
     if session.busy.get() {
+        tracing::info!("[sync] {kind}: ignored, collection busy");
         return;
     }
     if !begin_sync(&ui, "Syncing...") {
+        tracing::info!("[sync] {kind}: ignored, sync already running");
         return;
     }
 
     session.busy.set(true);
     set_busy(&ui, true);
-    run_sync_after_delay(ui, session, config, hooks, sync_now);
+    run_sync_after_delay(ui, session, config, hooks, kind, sync_now);
 }
 
 fn schedule_full_sync(
@@ -144,22 +170,24 @@ fn schedule_full_sync(
     hooks: FrontendHooks,
     upload: bool,
 ) {
-    let message = if upload {
-        "Uploading collection..."
+    let (kind, message) = if upload {
+        ("full upload", "Uploading collection...")
     } else {
-        "Downloading collection..."
+        ("full download", "Downloading collection...")
     };
 
     if session.busy.get() {
+        tracing::info!("[sync] {kind}: ignored, collection busy");
         return;
     }
     if !begin_sync(&ui, message) {
+        tracing::info!("[sync] {kind}: ignored, sync already running");
         return;
     }
 
     session.busy.set(true);
     set_busy(&ui, true);
-    run_sync_after_delay(ui, session, config, hooks, move |session, config| {
+    run_sync_after_delay(ui, session, config, hooks, kind, move |session, config| {
         full_sync(session, config, upload)
     });
 }
@@ -185,14 +213,17 @@ fn run_sync_after_delay<F>(
     session: Rc<LearnSession>,
     config: Rc<RefCell<Config>>,
     hooks: FrontendHooks,
+    kind: &'static str,
     operation: F,
 ) where
     F: FnOnce(&LearnSession, &mut Config) -> SyncResult + 'static,
 {
     slint::Timer::single_shot(Duration::from_millis(10), move || {
+        let started = Instant::now();
         let guard = match hooks.sync.clone().start() {
             Ok(guard) => guard,
             Err(err) => {
+                tracing::warn!("[sync] {kind}: not started: {err}");
                 session.busy.set(false);
                 if let Some(ui) = ui.upgrade() {
                     ui.set_sync_state(SyncState::error(&err));
@@ -202,10 +233,13 @@ fn run_sync_after_delay<F>(
             }
         };
 
+        let prepared_ms = started.elapsed().as_millis();
+        tracing::info!("[sync] {kind}: started (preparation {prepared_ms} ms)");
         let result = {
             let mut cfg = config.borrow_mut();
             operation(&session, &mut cfg)
         };
+        log_result(kind, &result, started.elapsed().as_millis() - prepared_ms);
         // Any sync, even a failed one, may have changed the collection's
         // current deck. Syncs only start outside a study session, so the card
         // state is not in use.
@@ -215,6 +249,37 @@ fn run_sync_after_delay<F>(
         apply_sync_result(ui, &session, &config, &hooks, &result);
         drop(guard);
     });
+}
+
+fn log_result(kind: &str, result: &SyncResult, sync_ms: u128) {
+    let server = result
+        .server_message
+        .as_deref()
+        .map(str::trim)
+        .filter(|message| !message.is_empty())
+        .map(|message| format!(", server: {message}"))
+        .unwrap_or_default();
+    if matches!(result.action, SyncAction::FullSyncRequired { .. }) {
+        tracing::warn!(
+            "[sync] {kind}: full sync required after {sync_ms} ms, {:?}: {}{server}",
+            result.action,
+            result.message
+        );
+    } else if result.success {
+        tracing::info!(
+            "[sync] {kind}: done in {sync_ms} ms, {:?}: {}{server}",
+            result.action,
+            result.message
+        );
+    } else {
+        tracing::error!(
+            "[sync] {kind}: failed after {sync_ms} ms: {}{server}",
+            result.message
+        );
+    }
+    if let Some(media_error) = &result.media_error {
+        tracing::warn!("[sync] {kind}: {media_error}");
+    }
 }
 
 fn apply_sync_result(

@@ -7,6 +7,8 @@ mod auth;
 mod backup;
 mod client;
 
+use std::time::Instant;
+
 use anki::sync::login::SyncAuth;
 use tokio::runtime::Runtime;
 
@@ -67,6 +69,7 @@ pub fn sync_now(session: &LearnSession, config: &mut Config) -> SyncResult {
     };
 
     if let Some(endpoint) = result.new_endpoint.take() {
+        tracing::info!("[sync] server moved this account to {endpoint}");
         let normalized = normalize_endpoint(&endpoint).ok().flatten();
         config.ankiweb.endpoint = Some(endpoint);
         if config.ankiweb.token.is_some() {
@@ -116,6 +119,7 @@ pub fn full_sync(session: &LearnSession, config: &mut Config, upload: bool) -> S
                 "Could not back up local collection: {err}{reopen_note}"
             ));
         }
+        tracing::info!("[sync] backed up the local collection before download");
         if let Err(err) = reopen_collection(session, &mut builder, config) {
             return SyncResult::error(format!(
                 "Could not reopen collection before download: {err}"
@@ -171,9 +175,11 @@ fn sync_media_if_enabled(
     mut result: SyncResult,
 ) -> SyncResult {
     if !config.ankiweb.sync_media {
+        tracing::info!("[sync] media: off (sync_media = false)");
         return result;
     }
 
+    let started = Instant::now();
     let media_result = {
         let col_borrow = session.collection.borrow();
         let Some(col) = col_borrow.as_ref() else {
@@ -182,8 +188,10 @@ fn sync_media_if_enabled(
         rt.block_on(session.sync_manager.sync_media(col, auth))
     };
 
-    if let Err(err) = media_result {
-        result.media_error = Some(format!("Media sync failed: {err}"));
+    match media_result {
+        Ok(()) => tracing::info!("[sync] media: done in {} ms", started.elapsed().as_millis()),
+        // Logged with the collection result by the frontend.
+        Err(err) => result.media_error = Some(format!("Media sync failed: {err}")),
     }
     result
 }

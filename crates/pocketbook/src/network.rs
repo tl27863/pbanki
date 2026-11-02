@@ -1,6 +1,7 @@
 use std::os::raw::c_int;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use inkview::bindings::{
     Inkview, NET_ABORTED, NET_CONNECTED, NET_EAUTH, NET_EBADCONF, NET_EDISABLED, NET_EFLIGHTMODE,
@@ -10,12 +11,18 @@ use inkview::bindings::{
 static CONNECTED_BY_APP: AtomicBool = AtomicBool::new(false);
 static OWNED_SSID: Mutex<Option<String>> = Mutex::new(None);
 
+// Log lines say whether the network changed but never name it (SSIDs are
+// personal data and the logs get shared).
+
 pub fn ensure_connected(iv: &'static Inkview) -> Result<(), String> {
     if is_connected(iv) {
+        tracing::info!("[wifi] already connected; leaving it on after sync");
         clear_ownership();
         return Ok(());
     }
 
+    tracing::info!("[wifi] not connected; powering the radio and opening the connect dialog");
+    let started = Instant::now();
     unsafe {
         iv.WiFiPower(1);
     }
@@ -25,11 +32,14 @@ pub fn ensure_connected(iv: &'static Inkview) -> Result<(), String> {
     // KOReader and lets the user enable Wi-Fi without leaving the app.
     let status = unsafe { iv.NetConnect(std::ptr::null()) };
 
+    let elapsed_ms = started.elapsed().as_millis();
     if status == NET_OK as c_int || is_connected(iv) {
+        tracing::info!("[wifi] connected by pbAnki in {elapsed_ms} ms (status {status})");
         CONNECTED_BY_APP.store(true, Ordering::SeqCst);
         set_owned_ssid(current_ssid(iv));
         Ok(())
     } else {
+        tracing::warn!("[wifi] connection failed after {elapsed_ms} ms (status {status})");
         clear_ownership();
         Err(connection_error(status))
     }
@@ -44,9 +54,12 @@ pub fn disconnect_after_sync(iv: &'static Inkview) {
     let current = current_ssid(iv);
 
     if should_disconnect(expected.as_deref(), current.as_deref()) {
+        tracing::info!("[wifi] disconnecting the connection pbAnki made");
         unsafe {
             iv.NetDisconnect();
         }
+    } else {
+        tracing::info!("[wifi] network changed during sync; leaving it connected");
     }
 }
 
