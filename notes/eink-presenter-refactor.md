@@ -4,7 +4,7 @@ Phase 1 of `deep-research/blitz-on-inkview.md`. The user decided to go for the f
 
 ## Status
 
-2026-11-02: done. Steps 1–5 are on the fork branch `pbanki-eink-core` (`55c0854`). The PB710 check passed (`pbanki-20261102-195601.log`). `pbanki-device-panel` is fast-forwarded to `55c0854` and pushed. Rollback target: `070ce4f`. Open: the pbAnki `Cargo.lock` update (`cargo update -p inkview -p inkview-slint`, its own commit).
+2026-11-02: done. Steps 1–5 are on the fork branch `pbanki-eink-core` (`55c0854`). The PB710 check passed (`pbanki-20261102-195601.log`). `pbanki-device-panel` is fast-forwarded to `55c0854` and pushed. Rollback target: `070ce4f`. The pbAnki `Cargo.lock` points to `fc8ff7f` (pbAnki `2601f42`), which includes the review follow-up below.
 
 | Commit | Step |
 |---|---|
