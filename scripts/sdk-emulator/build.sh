@@ -6,18 +6,18 @@ set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-ZIG_VERSION="0.14.1"
-ZIG_DIR="$HOME/.local/opt/zig-x86_64-linux-$ZIG_VERSION"
-export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$ZIG_DIR:$PATH"
+# Zig and cargo-zigbuild from mise.toml, also when mise is not activated.
+if command -v mise >/dev/null 2>&1; then
+    mise_paths="$(cd "$ROOT" && mise bin-paths 2>/dev/null | paste -sd: -)"
+    [ -z "$mise_paths" ] || export PATH="$mise_paths:$PATH"
+fi
 
-command -v cargo-zigbuild >/dev/null 2>&1 || {
-    echo "error: cargo-zigbuild not found; cargo install cargo-zigbuild --locked" >&2
-    exit 1
-}
-command -v zig >/dev/null 2>&1 || {
-    echo "error: zig not found; install Zig $ZIG_VERSION (e.g. to $ZIG_DIR)" >&2
-    exit 1
-}
+for tool in zig cargo-zigbuild; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        echo "error: $tool not found; run \`mise install\` in $ROOT" >&2
+        exit 1
+    }
+done
 
 cd "$ROOT"
 cargo zigbuild \

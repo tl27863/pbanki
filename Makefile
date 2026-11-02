@@ -3,6 +3,13 @@
 # - base: B288/B300 devices, soft-float, SDK 6.10 bindings -> target/pocketbook/
 # - rk3566: RK3566 devices, hard-float, SDK 6.11 bindings -> target/pocketbook-rk3566/
 GLIBC = 2.38
+
+# Zig and cargo-zigbuild come from mise (mise.toml, `mise install` once); add
+# their paths so make works without `mise activate` in the shell.
+MISE_BIN_PATHS := $(shell mise bin-paths 2>/dev/null | paste -sd: -)
+ifneq ($(MISE_BIN_PATHS),)
+export PATH := $(MISE_BIN_PATHS):$(PATH)
+endif
 BASE_TARGET = armv7-unknown-linux-gnueabi
 BASE_SDK = sdk-6-10
 RK3566_TARGET = armv7-unknown-linux-gnueabihf

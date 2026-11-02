@@ -1,0 +1,5 @@
+# Build tools for the PocketBook cross builds and the SDK emulator; run
+# `mise install` once. Rust itself comes from rustup (rust-toolchain.toml).
+[tools]
+zig = "0.14.1"
+"cargo:cargo-zigbuild" = "0.24.0"
