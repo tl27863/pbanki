@@ -1,6 +1,7 @@
 [toolchain]
 # Tracks the toolchain anki `main` pins (1.99.0 as of Oct 2026); bump together
-# with anki updates. armv7 is the PocketBook target.
+# with anki updates. armv7 gnueabi is the B288/B300 PocketBook target,
+# gnueabihf the RK3566 one.
 channel = "1.99.1"
 components = ["rust-src", "clippy", "rustfmt", "rust-analyzer"]
-targets = ["armv7-unknown-linux-gnueabi"]
+targets = ["armv7-unknown-linux-gnueabi", "armv7-unknown-linux-gnueabihf"]

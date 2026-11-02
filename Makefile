@@ -1,39 +1,69 @@
-all:
-	cargo zigbuild --target armv7-unknown-linux-gnueabi.2.23 --profile dev -p pbanki --features=sdk-6-8
+# Two device builds, both for firmware 6.10+ (glibc 2.38, the floor of the
+# 6.10 and 6.11 libinkview.so):
+# - base: B288/B300 devices, soft-float, SDK 6.10 bindings -> target/pocketbook/
+# - rk3566: RK3566 devices, hard-float, SDK 6.11 bindings -> target/pocketbook-rk3566/
+GLIBC = 2.38
+BASE_TARGET = armv7-unknown-linux-gnueabi
+BASE_SDK = sdk-6-10
+RK3566_TARGET = armv7-unknown-linux-gnueabihf
+RK3566_SDK = sdk-6-11
 
-release: FEATURES = sdk-6-8
-release-profile: FEATURES = sdk-6-8,profile
+# $(call bundle,<target triple>,<bundle dir>): stage launcher + binary.
+define bundle
+	mkdir -p $(2)
+	cp target/$(1)/release/pbanki $(2)/pbanki.bin
+	cp scripts/pocketbook/pbanki.app $(2)/pbanki.app
+	chmod +x $(2)/pbanki.app $(2)/pbanki.bin
+	ls -lh $(2)/pbanki.app $(2)/pbanki.bin
+endef
+
+all:
+	cargo zigbuild --target $(BASE_TARGET).$(GLIBC) --profile dev -p pbanki --features=$(BASE_SDK)
+
+rk3566:
+	cargo zigbuild --target $(RK3566_TARGET).$(GLIBC) --profile dev -p pbanki --features=$(RK3566_SDK)
+
+release: FEATURES = $(BASE_SDK)
+release-profile: FEATURES = $(BASE_SDK),profile
 
 release release-profile:
-	cargo zigbuild --target armv7-unknown-linux-gnueabi.2.23 --profile release -p pbanki --features=$(FEATURES)
-	mkdir -p target/pocketbook
-	cp target/armv7-unknown-linux-gnueabi/release/pbanki target/pocketbook/pbanki.bin
-	cp scripts/pocketbook/pbanki.app target/pocketbook/pbanki.app
-	chmod +x target/pocketbook/pbanki.app target/pocketbook/pbanki.bin
-	ls -lh target/pocketbook/pbanki.app target/pocketbook/pbanki.bin
+	cargo zigbuild --target $(BASE_TARGET).$(GLIBC) --profile release -p pbanki --features=$(FEATURES)
+	$(call bundle,$(BASE_TARGET),target/pocketbook)
 
-.PHONY: all release release-profile emulator-toolchain emulator-setup emulator-run emulator-build emulator-sync emulator-dev emulator-deck lint lint-parsers
+release-rk3566: FEATURES = $(RK3566_SDK)
+release-rk3566-profile: FEATURES = $(RK3566_SDK),profile
 
-emulator-toolchain:
-	./scripts/emulator/install-toolchain.sh
+release-rk3566 release-rk3566-profile:
+	cargo zigbuild --target $(RK3566_TARGET).$(GLIBC) --profile release -p pbanki --features=$(FEATURES)
+	$(call bundle,$(RK3566_TARGET),target/pocketbook-rk3566)
 
-emulator-setup:
-	./scripts/emulator/setup.sh
+# inkview-rs's waveform_probe example for the device (base bundle ABI). Copy
+# target/pocketbook-probe/waveform-probe.app to applications/, run it once,
+# and collect applications/waveform-probe.log. Needs the local fork checkout.
+INKVIEW_RS ?= ../inkview-rs
 
-emulator-run:
-	./scripts/emulator/run.sh
+waveform-probe:
+	cargo zigbuild --manifest-path $(INKVIEW_RS)/Cargo.toml --target $(BASE_TARGET).$(GLIBC) --release -p inkview --no-default-features --features=$(BASE_SDK) --example waveform_probe
+	mkdir -p target/pocketbook-probe
+	cp $(INKVIEW_RS)/target/$(BASE_TARGET)/release/examples/waveform_probe target/pocketbook-probe/waveform-probe.app
+	ls -lh target/pocketbook-probe/waveform-probe.app
 
-emulator-dev:
-	./scripts/emulator/dev.sh
+# SDK PC emulator (x86-64 InkView in a container): SDK=6.10 (B288, PB700
+# profile, default) or SDK=6.11 (RK3566, 1030 profile). See
+# scripts/sdk-emulator/lib.sh for PROFILE, RESMODE and EMU_NET.
+SDK ?= 6.10
+export SDK
 
-emulator-build:
-	./scripts/emulator/build-app.sh
+sdk-emulator-setup:
+	./scripts/sdk-emulator/setup.sh
 
-emulator-sync:
-	./scripts/emulator/sync-app.sh
+sdk-emulator-build:
+	./scripts/sdk-emulator/build.sh
 
-emulator-deck:
-	./scripts/emulator/install-deck.sh
+sdk-emulator: sdk-emulator-build
+	./scripts/sdk-emulator/run.sh
+
+.PHONY: all rk3566 waveform-probe release release-profile release-rk3566 release-rk3566-profile sdk-emulator-setup sdk-emulator-build sdk-emulator lint lint-parsers
 
 # Lint: clippy plus the ast-grep rules in lint/ (see sgconfig.yml). ast-grep
 # comes from `cargo install ast-grep --locked`, the Slint parser build needs
@@ -55,6 +85,8 @@ lint-parsers: $(SLINT_PARSER)
 
 lint: lint-parsers
 	cargo clippy -p pbanki-core -p pbanki-desktop --all-targets
-	cargo clippy -p pbanki --features sdk-6-8 --all-targets
+	cargo clippy -p pbanki-desktop --features eink-sim --all-targets
+	cargo clippy -p pbanki --features $(BASE_SDK) --all-targets
+	cargo clippy -p pbanki --features $(RK3566_SDK) --all-targets
 	$(AST_GREP) test --custom-languages allow --skip-snapshot-tests
 	$(AST_GREP) scan --custom-languages allow

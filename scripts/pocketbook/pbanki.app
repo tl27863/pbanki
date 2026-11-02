@@ -118,4 +118,15 @@ else
     result="exited with status $rc"
 fi
 printf '%s pbAnki %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$result" >>"$LOG"
+# 126/127: the kernel or loader refused the binary. The usual cause is the
+# wrong bundle: target/pocketbook is soft-float (B288/B300), and
+# target/pocketbook-rk3566 is hard-float (RK3566).
+if [ "$rc" -eq 126 ] || [ "$rc" -eq 127 ]; then
+    if [ -e /lib/ld-linux-armhf.so.3 ]; then
+        hint="this device is hard-float (RK3566): install the target/pocketbook-rk3566 bundle"
+    else
+        hint="this device is soft-float (B288/B300): install the target/pocketbook bundle"
+    fi
+    printf '%s hint: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$hint" >>"$LOG"
+fi
 exit "$rc"

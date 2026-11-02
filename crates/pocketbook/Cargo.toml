@@ -19,5 +19,8 @@ fontique = { version = "0.11", features = ["fontconfig-dlopen"] }
 
 [features]
 default = []
-sdk-6-8 = ["inkview/sdk-6-8"]
+# Base build: B288/B300 (soft-float), firmware 6.10+.
+sdk-6-10 = ["inkview/sdk-6-10", "inkview-slint/sdk-6-10"]
+# RK3566 build (hard-float), firmware 6.11+.
+sdk-6-11 = ["inkview/sdk-6-11", "inkview-slint/sdk-6-11"]
 profile = ["pbanki-core/profile"]

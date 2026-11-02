@@ -1,0 +1,25 @@
+# Runtime for the SDK 6.11 (RK3566) PC emulator. The SDK's x86-64
+# libinkview.so links GTK2/X11, ICU 76 and jsoncpp 26 and needs GLIBC_2.38,
+# which match Debian trixie (t64 package names).
+# Only runtime libraries; nothing from the SDK is baked into the image (it is
+# mounted read-only by run.sh). apt keeps TLS and signature checks.
+FROM debian:trixie-slim
+
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        libssl3t64 libcurl4t64 zlib1g \
+        libfreetype6 libjpeg62-turbo libtiff6 libpng16-16t64 \
+        libglib2.0-0t64 libatk1.0-0t64 libgdk-pixbuf-2.0-0 libcairo2 libharfbuzz0b \
+        libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 libpangoxft-1.0-0 \
+        libgtk2.0-0t64 libicu76 libjsoncpp26 libstdc++6 \
+        libfontconfig1 fontconfig fonts-dejavu-core fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/* \
+    # pbAnki's default font_dirs include /fonts (the PB700 location), so the
+    # default "Noto Sans CJK JP" card fallback is found without config edits.
+    && ln -s /usr/share/fonts/opentype/noto /fonts
+
+ARG uid=1000
+ARG gid=1000
+RUN groupadd -g "$gid" pb && useradd -m -u "$uid" -g "$gid" pb
+USER pb

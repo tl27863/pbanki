@@ -42,7 +42,7 @@ pkgs.mkShell rec {
         export OPENSSL_LIB_DIR="${pkgs.openssl.out}/lib"
         export OPENSSL_DIR="${pkgs.openssl.out}"
 
-        rustup target add armv7-unknown-linux-gnueabi
+        rustup target add armv7-unknown-linux-gnueabi armv7-unknown-linux-gnueabihf
         cargo install cargo-zigbuild
   '';
   # Add precompiled library to rustc search path
