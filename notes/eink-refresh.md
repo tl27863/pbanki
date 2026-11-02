@@ -43,7 +43,7 @@ Each item below was a regression on the device.
 
 ## Update policy
 
-Each update that the backend sends goes through `UpdatePolicy` (`inkview-slint/src/policy.rs`). The policy gives one update mode for each class:
+Each update that the backend sends goes through `UpdatePolicy` (`inkview-eink/src/policy.rs` in the fork). The policy gives one update mode for each class:
 
 | Class | When | Default |
 |---|---|---|
