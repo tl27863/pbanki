@@ -73,7 +73,7 @@ impl FontCatalog {
                 let families = match face_families(&path) {
                     Ok(families) => families,
                     Err(err) => {
-                        eprintln!("[font] skipping {}: {err}", path.display());
+                        tracing::warn!("[font] skipping {}: {err}", path.display());
                         continue;
                     }
                 };
@@ -111,7 +111,9 @@ impl FontCatalog {
         let primary = primary.to_owned();
         let fallbacks = fallbacks.to_vec();
         if entries.is_empty() {
-            eprintln!("[font] no fonts found in configured font_dirs; coverage guard disabled");
+            tracing::warn!(
+                "[font] no fonts found in configured font_dirs; coverage guard disabled"
+            );
         } else {
             let missing: Vec<&str> = std::iter::once(primary.as_str())
                 .chain(fallbacks.iter().map(String::as_str))
@@ -122,9 +124,9 @@ impl FontCatalog {
                 })
                 .collect();
             if !missing.is_empty() {
-                eprintln!("[font] configured families not found: {missing:?}");
+                tracing::warn!("[font] configured families not found: {missing:?}");
             }
-            eprintln!(
+            tracing::info!(
                 "[font] catalog: {} faces from {}",
                 entries.len(),
                 font_dirs.join(", ")
@@ -296,7 +298,7 @@ pub fn register_catalog_fonts(catalog: &FontCatalog) {
     let timer = ProfileTimer::start();
     let mut files = catalog.files_to_register();
     if files.is_empty() {
-        eprintln!("[font] no configured font files found; trying built-in paths");
+        tracing::warn!("[font] no configured font files found; trying built-in paths");
         files.extend(default_font_file());
     }
 
@@ -307,13 +309,13 @@ pub fn register_catalog_fonts(catalog: &FontCatalog) {
         let mapped = match mapped {
             Ok(mapped) => mapped,
             Err(err) => {
-                eprintln!("[font] {}: {err}", path.display());
+                tracing::warn!("[font] {}: {err}", path.display());
                 continue;
             }
         };
         let fonts = collection.register_fonts(Blob::new(Arc::new(mapped)), None);
         if fonts.is_empty() {
-            eprintln!("[font] {}: no fonts found", path.display());
+            tracing::warn!("[font] {}: no fonts found", path.display());
         }
         for (family, _) in fonts {
             if !families.contains(&family) {
@@ -346,7 +348,7 @@ pub fn register_catalog_fonts(catalog: &FontCatalog) {
         collection.set_fallbacks(key, families.iter().copied().chain(system));
     }
 
-    eprintln!(
+    tracing::info!(
         "[font] registered {} font file(s) ({} families) with Slint",
         files.len(),
         families.len()
@@ -391,7 +393,7 @@ fn default_font_file() -> Option<PathBuf> {
         }
     }
 
-    eprintln!("[font] Ryo Gothic PlusN not found; using system fonts only");
+    tracing::warn!("[font] Ryo Gothic PlusN not found; using system fonts only");
     None
 }
 

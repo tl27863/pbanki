@@ -153,7 +153,7 @@ pub(super) fn spawn_card_job<F>(
         );
         let started = Instant::now();
         let result = operation(&mut collection);
-        eprintln!(
+        tracing::info!(
             "[job {job_id}] worker finished in {} ms",
             started.elapsed().as_millis()
         );
@@ -200,7 +200,7 @@ fn finish_job(
     result: Result<LoadedCard, String>,
 ) {
     let delivery_timer = ProfileTimer::start();
-    eprintln!("[job {}] delivering result to UI", job.id);
+    tracing::info!("[job {}] delivering result to UI", job.id);
 
     if let Some(collection) = collection {
         *job.session.collection.borrow_mut() = Some(collection);
@@ -220,7 +220,7 @@ fn finish_job(
             (card_node(loaded, job.deck.clone()), font)
         }
         Err(err) => {
-            eprintln!("Failed to load card: {err}");
+            tracing::error!("Failed to load card: {err}");
             // The deck selection may not have completed; select it again on
             // the next entry.
             reset_session_memory(&job.session);

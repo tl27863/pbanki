@@ -35,7 +35,7 @@ pub fn init_session(config: &Config) -> Rc<LearnSession> {
 
     if let Some(parent) = col_file.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
-            eprintln!("Failed to create collection directory: {:?}", e);
+            tracing::error!("Failed to create collection directory: {:?}", e);
             panic!(
                 "Cannot create collection directory at: {}",
                 parent.display()
@@ -46,13 +46,13 @@ pub fn init_session(config: &Config) -> Rc<LearnSession> {
     let mut col = match collection_builder(config).build() {
         Ok(col) => col,
         Err(e) => {
-            eprintln!("Failed to open collection: {:?}", e);
+            tracing::error!("Failed to open collection: {:?}", e);
             panic!("Cannot continue without a valid collection.");
         }
     };
 
     if let Err(e) = col.upgrade_scheduler() {
-        eprintln!("Failed to upgrade scheduler: {:?}", e);
+        tracing::warn!("Failed to upgrade scheduler: {:?}", e);
     }
 
     import_pending_packages(&mut col, collection_path);
@@ -102,7 +102,7 @@ pub(crate) fn reopen_collection(
             Ok(())
         }
         Err(err) => {
-            eprintln!("Could not reopen collection after full sync: {err}");
+            tracing::error!("Could not reopen collection after full sync: {err}");
             // Fall back to a plain reopen from disk so a failure here does not
             // leave the app running without a collection.
             match collection_builder(config).build() {
@@ -148,14 +148,14 @@ fn import_pending_packages(collection: &mut Collection, collection_path: &str) {
 
         match collection.import_apkg(&path, options) {
             Ok(output) => {
-                eprintln!(
+                tracing::info!(
                     "Imported {} ({} new notes)",
                     path.display(),
                     output.output.new.len()
                 );
                 let imported_path = path.with_extension("apkg.imported");
                 if let Err(err) = fs::rename(&path, &imported_path) {
-                    eprintln!(
+                    tracing::warn!(
                         "Imported {}, but could not rename it to {}: {err}",
                         path.display(),
                         imported_path.display()
@@ -163,7 +163,7 @@ fn import_pending_packages(collection: &mut Collection, collection_path: &str) {
                 }
             }
             Err(err) => {
-                eprintln!("Failed to import {}: {err:?}", path.display());
+                tracing::error!("Failed to import {}: {err:?}", path.display());
             }
         }
     }

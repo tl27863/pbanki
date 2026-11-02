@@ -11,6 +11,7 @@ slint.workspace = true
 inkview.workspace = true
 inkview-slint.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 # Not used directly: makes Slint's fontique load libfontconfig at runtime
 # instead of linking it, so the armv7 cross build needs no fontconfig sysroot.
 # Without the library on the device, system fonts are skipped and the UI falls

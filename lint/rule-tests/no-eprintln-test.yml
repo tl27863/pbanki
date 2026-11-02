@@ -1,0 +1,17 @@
+id: pbanki-no-eprintln
+valid:
+  - |
+    tracing::warn!("[font] skipping {}: {err}", path.display());
+  - |
+    mod tests {
+        fn check() {
+            eprintln!("checked {checked} font files");
+        }
+    }
+invalid:
+  - |
+    eprintln!("Failed to open collection: {:?}", e);
+  - |
+    std::eprintln!("[device] {device}");
+  - |
+    println!("{x}");

@@ -22,6 +22,10 @@ slint-build = "1.18.1"
 inkview = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-device-panel", default-features = false }
 inkview-slint = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-device-panel", default-features = false }
 tokio = { version = "1", features = ["io-util"] }
+# Logging. anki already depends on both (same versions and features), so they
+# add no crates. pbanki_core::logging installs the subscriber.
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 
 [profile.release]
 opt-level = 3

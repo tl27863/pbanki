@@ -2942,9 +2942,10 @@ checksum = "a257582fdcde896fd96463bf2d40eefea0580021c0712a0e2b028b60b47a837a"
 [[package]]
 name = "inkview"
 version = "0.3.0"
-source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-device-panel#e1ab2b011128e8b68e6fe40df31e2615bfeb67dc"
+source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-device-panel#070ce4ff9cb843130d63f3c54df0fce385198543"
 dependencies = [
  "libloading 0.9.0",
+ "log",
  "num-derive",
  "num-traits",
  "thiserror 2.0.17",
@@ -2953,10 +2954,11 @@ dependencies = [
 [[package]]
 name = "inkview-slint"
 version = "0.3.0"
-source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-device-panel#e1ab2b011128e8b68e6fe40df31e2615bfeb67dc"
+source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-device-panel#070ce4ff9cb843130d63f3c54df0fce385198543"
 dependencies = [
  "euclid",
  "inkview",
+ "log",
  "rgb",
  "slint",
 ]
@@ -4289,6 +4291,7 @@ dependencies = [
  "rgb",
  "slint",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4306,6 +4309,8 @@ dependencies = [
  "tokio",
  "toml 0.9.8",
  "toml_edit 0.23.7",
+ "tracing",
+ "tracing-subscriber",
  "ttf-parser",
 ]
 
@@ -4319,6 +4324,7 @@ dependencies = [
  "pbanki-core",
  "slint",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -131,7 +131,7 @@ pub fn next_card(
     let font_choice = fonts.choose_font(&combined);
     let font_elapsed = font_timer.elapsed();
     if !font_choice.missing.is_empty() {
-        eprintln!(
+        tracing::warn!(
             "[font] card {}: {} character(s) not covered by '{}': {:?}",
             card.card.id().0,
             font_choice.missing.len(),
@@ -214,7 +214,7 @@ pub fn rate_card(
     if let Err(err) = answer_result {
         // Loading the next card anyway would show the unchanged queue head as
         // if it were new, silently dropping the rating.
-        eprintln!("Failed to answer card {card_id}: {err:?}");
+        tracing::error!("Failed to answer card {card_id}: {err:?}");
         return Err(format!("could not save the rating: {err}"));
     }
 

@@ -7,6 +7,7 @@ edition.workspace = true
 pbanki-core.workspace = true
 slint = { workspace = true, features = ["backend-winit"] }
 tokio.workspace = true
+tracing.workspace = true
 # eink-sim: the PocketBook backend over a simulated e-ink panel. The SDK
 # bindings are compiled but libinkview.so is never loaded.
 inkview = { workspace = true, optional = true, features = ["sdk-6-10"] }
