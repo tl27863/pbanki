@@ -122,13 +122,14 @@ brings the existing window to the front.
 
 `pbanki.app` is a shell launcher, matching KOReader's PocketBook packaging. It
 sets `GLIBC_TUNABLES=glibc.rtld.execstack=2`, required by firmware 6.11.1480+
-when loading InkView libraries, and writes stdout/stderr to
-`/mnt/ext1/applications/pbanki/logs/pbanki.log`. It creates the `pbanki/logs/`
-folder if it does not exist. The launcher keeps a single instance via
-`/tmp/pbanki.pid`, rotates the log at launch when it exceeds 1 MiB, and records
-the start and exit status. If the binary cannot start (for example, the
+when loading InkView libraries, and writes stdout/stderr to one log file per launch,
+`/mnt/ext1/applications/pbanki/logs/pbanki-YYYYMMDD-HHMMSS.log`, and keeps the
+newest 20. It creates the `pbanki/logs/` folder if it does not exist and moves
+the single `pbanki.log` of older versions to `pbanki-legacy.log`. The launcher
+keeps a single instance via `/tmp/pbanki.pid` and records the start and exit
+status. If the binary cannot start (for example, the
 RK3566 bundle on a B288 device), the log says which bundle the device needs. If
-the application directory is not writable, it falls back to `/tmp/pbanki.log`.
+the application directory is not writable, it falls back to `/tmp/pbanki-YYYYMMDD-HHMMSS-<pid>.log`.
 It changes into its own directory (normally `/mnt/ext1/applications`) before
 starting the binary, so relative `collection_path` values resolve there.
 

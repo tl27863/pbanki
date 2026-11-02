@@ -40,8 +40,10 @@ All targets use `cargo zigbuild -p pbanki`. The two bundles have the same file n
 - `pbanki.app` is a shell launcher (`scripts/pocketbook/pbanki.app`). `pbanki.bin` is the ARM binary.
 - The launcher does these steps:
   - It sets `GLIBC_TUNABLES=glibc.rtld.execstack=2` for firmware 6.11.1480+ (the same workaround as KOReader).
-  - It keeps one instance through `/tmp/pbanki.pid`. A second launch focuses the running instance with `iv2sh SetActiveTask`.
-  - It creates `pbanki/logs/`. At launch it rotates `pbanki/logs/pbanki.log` when the file is larger than 1 MiB.
+  - It keeps one instance through `/tmp/pbanki.pid`. A second launch focuses the running instance with `iv2sh SetActiveTask`. It writes this to the log of the running instance (the second line of the pidfile).
+  - It writes stdout and stderr of each launch to a new file, `pbanki/logs/pbanki-YYYYMMDD-HHMMSS.log`. It keeps the newest 20 files.
+  - It moves the single `pbanki.log` of older launchers to `pbanki/logs/pbanki-legacy.log` once. Pruning does not delete this file.
+  - If `pbanki/logs/` is not writable, it logs to `/tmp/pbanki-YYYYMMDD-HHMMSS-<pid>.log`.
   - It logs the start and the exit status. On exit code 126 or 127 it logs which bundle the device needs. If `/lib/ld-linux-armhf.so.3` exists, the device is RK3566.
 - To deploy, copy both files to `/mnt/ext1/applications/`. Do not copy the raw binary as `pbanki.app`.
 - Close pbAnki before you replace `pbanki.bin`. `/mnt/ext1` is FAT. If you overwrite a running executable, it can stop with `SIGBUS`.

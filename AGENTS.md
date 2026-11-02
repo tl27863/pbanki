@@ -59,7 +59,7 @@ Dev sync server: `make -C ../pbanki-sync-server up`. The endpoint is `http://127
 
 ## Rules
 
-- Do not access the user's PocketBook (for example `/run/media/uu02d/PB710` or `/mnt/ext1`) unless the user asks. The user deploys builds and shares `pbanki/logs/pbanki.log`.
+- Do not access the user's PocketBook (for example `/run/media/uu02d/PB710` or `/mnt/ext1`) unless the user asks. The user deploys builds and shares the session logs from `pbanki/logs/`.
 - Do not `cargo update` together with other changes.
 - Read the related note before you change the e-ink backend, the card jobs, fonts, or sync.
 - You can use ast-grep for structural search and codemods (`ast-grep run -l rust -p '<pattern>'`). For Slint, add `-l slint --custom-languages allow`.
