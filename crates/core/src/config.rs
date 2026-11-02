@@ -23,6 +23,18 @@ pub struct GeneralConfig {
     pub card_fallback_fonts: Vec<String>,
     #[serde(default = "default_font_dirs")]
     pub font_dirs: Vec<String>,
+    /// Show the PocketBook status bar (clock, battery, Wi-Fi; tapping it
+    /// opens the system tray) above the app. Takes effect after a restart.
+    #[serde(default = "default_system_panel")]
+    pub system_panel: bool,
+}
+
+/// Comment written above `system_panel` in the template and when the key is
+/// added to an existing config.
+const SYSTEM_PANEL_COMMENT: &str = "\n# Show the PocketBook status bar (clock, battery, Wi-Fi) above pbAnki; tapping\n# it opens the system tray. Restart pbAnki after changing this.\n";
+
+fn default_system_panel() -> bool {
+    true
 }
 
 fn default_card_font() -> String {
@@ -98,6 +110,7 @@ impl Default for Config {
                 card_font: default_card_font(),
                 card_fallback_fonts: default_card_fallback_fonts(),
                 font_dirs: default_font_dirs(),
+                system_panel: default_system_panel(),
             },
             ankiweb: AnkiWebConfig {
                 username: String::new(),
@@ -141,6 +154,10 @@ font_dirs = [
     "/ebrmain/fonts",
 ]
 
+# Show the PocketBook status bar (clock, battery, Wi-Fi) above pbAnki; tapping
+# it opens the system tray. Restart pbAnki after changing this.
+system_panel = true
+
 [ankiweb]
 # AnkiWeb synchronization settings
 # Leave empty to disable sync
@@ -182,14 +199,19 @@ impl Config {
             let mut config: Config = toml::from_str(&contents)?;
             config.path = path.to_path_buf();
 
-            // Existing configs predate the font settings. Add any missing
-            // defaults without touching values the user already set.
-            let needs_save = ["card_font", "card_fallback_fonts", "font_dirs"]
-                .iter()
-                .any(|key| !general_has_key(&contents, key));
+            // Existing configs predate the font and panel settings. Add any
+            // missing defaults without touching values the user already set.
+            let needs_save = [
+                "card_font",
+                "card_fallback_fonts",
+                "font_dirs",
+                "system_panel",
+            ]
+            .iter()
+            .any(|key| !general_has_key(&contents, key));
             if needs_save {
                 if let Err(err) = config.save() {
-                    eprintln!("Could not add default font settings to config: {err}");
+                    eprintln!("Could not add default settings to config: {err}");
                 }
             }
 
@@ -241,6 +263,11 @@ impl Config {
         general["card_fallback_fonts"] =
             Item::Value(string_array(&self.general.card_fallback_fonts));
         general["font_dirs"] = Item::Value(string_array(&self.general.font_dirs));
+        let new_key = !general.contains_key("system_panel");
+        general["system_panel"] = value(self.general.system_panel);
+        if new_key && let Some(mut key) = general.key_mut("system_panel") {
+            key.leaf_decor_mut().set_prefix(SYSTEM_PANEL_COMMENT);
+        }
 
         let ankiweb = table_mut(&mut document, "ankiweb")?;
         ankiweb["username"] = value(&self.ankiweb.username);
@@ -392,6 +419,42 @@ password = ""
         assert!(contents.contains("card_font"));
         assert!(contents.contains("card_fallback_fonts"));
         assert!(contents.contains("font_dirs"));
+        assert!(config.general.system_panel);
+        assert!(contents.contains("# Show the PocketBook status bar"));
+        assert!(contents.contains("system_panel = true"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn system_panel_is_read_and_preserved() {
+        let path = temp_config_path("panel");
+        fs::write(
+            &path,
+            r#"[general]
+language = "en-GB"
+collection_path = "/tmp/collection"
+card_font = "Ryo Gothic PlusN"
+card_fallback_fonts = []
+font_dirs = []
+system_panel = false
+
+[ankiweb]
+username = ""
+password = ""
+"#,
+        )
+        .unwrap();
+
+        let mut config = Config::load_or_create(path.to_str().unwrap()).unwrap();
+        assert!(!config.general.system_panel);
+        config.ankiweb.username = "user".into();
+        config.save().unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("system_panel = false"));
+        // Present already, so no comment is added.
+        assert!(!contents.contains("# Show the PocketBook status bar"));
 
         let _ = fs::remove_file(path);
     }

@@ -15,109 +15,98 @@ Port of Anki to PocketBook devices using:
 
 ```bash
 cd crates/desktop
-cargo run
+cargo run                      # normal desktop window
+cargo run --features eink-sim  # simulated e-ink panel (see below)
 ```
 
 Place your Anki collection at `./pbanki/collection/`
 
 ### PocketBook
 
-```bash
-make                  # debug build
-make release          # release build
-make release-profile  # release build with [profile] timing logs
-```
+pbAnki needs PocketBook firmware 6.10 or later. There are two builds:
 
-Requires: `cargo-zigbuild` and `zig`. The InkView dependencies come from the
-`pbanki-upstream-master` branch of the `inkview-rs` fork and are fetched by Cargo
-automatically.
-
-## Emulator (PocketBook Era / PB700)
-
-For development without a physical device, this repo can drive the
-[katadelos/eink-emulator](https://github.com/katadelos/eink-emulator) QEMU port
-of the PocketBook Era (PB700, B288, firmware 6.10.3209).
-
-Host requirements: Python 3.10+, a C compiler, CMake, Ninja, QEMU build
-dependencies (`glib`, `pixman`), and `debugfs` from e2fsprogs. The app build also
-needs Zig and `cargo-zigbuild`; `make emulator-toolchain` installs Zig 0.14.1,
-`cargo-zigbuild` 0.24.0 and Rust 1.99.1 + the `armv7-unknown-linux-gnueabi`
-target under `~/.local` and `~/.cargo`.
+| Devices | Build | Bundle |
+|---|---|---|
+| B288/B300 (soft-float): PB700, PB710, 743G, 634, 629, ... | SDK 6.10 bindings | `target/pocketbook/` |
+| RK3566 (hard-float): 1030 | SDK 6.11 bindings | `target/pocketbook-rk3566/` |
 
 ```bash
-make emulator-dev        # interactive session: setup + build + upload + launch
+make                         # B288/B300 debug build
+make release                 # B288/B300 release bundle
+make release-profile         # same, with [profile] timing logs
+make rk3566                  # RK3566 debug build
+make release-rk3566          # RK3566 release bundle
+make release-rk3566-profile  # same, with [profile] timing logs
 ```
 
-`make emulator-dev` is the normal development entry point. It ensures the
-emulator exists, builds the ARM app, opens the emulator window, completes the
-first-boot wizard if needed, enables Wi-Fi, uploads `pbanki.app` and launches
-pbAnki from the app list. Keep the terminal open while using the emulator;
-Ctrl+C stops QEMU.
+Requires rustup, `cargo-zigbuild` (`cargo install cargo-zigbuild --locked`) and
+Zig 0.14.1 (in `PATH`, or unpacked to `~/.local/opt/zig-x86_64-linux-0.14.1`);
+`shell.nix` provides both. rustup installs Rust 1.99.1 with both armv7 targets
+from `rust-toolchain.toml` on first use. The InkView dependencies come from the `inkview-rs` fork and are
+fetched by Cargo automatically.
 
-The first run needs the toolchain and emulator setup:
+## Emulator (PocketBook SDK PC emulator)
+
+The PocketBook SDK includes an x86-64 desktop build of InkView that opens a
+window and emulates a device. pbAnki runs on it unchanged (native keyboard,
+dialogs, sync, optional status bar), built for x86-64. The emulator runs in a
+Docker container whose Debian release matches the SDK libraries.
 
 ```bash
-make emulator-toolchain  # one-time: Zig, cargo-zigbuild, Rust target
-make emulator-setup      # clone/build QEMU, download firmware, create PB700 instance
-make emulator-run        # start the emulator only (GUI)
+make sdk-emulator-setup           # one-time: SDK runtime, image, first build
+make sdk-emulator                 # build and run (SDK 6.10, PB700 profile)
+make sdk-emulator-setup SDK=6.11  # RK3566 SDK
+make sdk-emulator SDK=6.11        # build and run (SDK 6.11, 1030 profile)
 ```
 
-The first setup downloads a ~453 MiB firmware update and builds a patched QEMU,
-so it takes several minutes. `emulator-setup` also completes the PocketBook
-first-boot wizard automatically. If the wizard is skipped with
-`PBANKI_SKIP_WIZARD=1`, `make emulator-dev` completes it in the visible window.
+Host requirements: Docker, X11 or Xwayland (`DISPLAY`), `7z`, `curl`, `git`, and
+the toolchain above. The setup downloads the SDK archive once
+(about 650 MB for 6.10, 770 MB for 6.11) from the
+[Sean-on-Git/PocketBook-SDK](https://github.com/Sean-on-Git/PocketBook-SDK)
+re-upload, verifies it against `scripts/sdk-emulator/SHA256SUMS`, and extracts
+only the PC runtime libraries and device profiles.
 
-Build and upload manually when needed:
+- Device data lives in `target/sdk-emulator/<sdk>/work/system/`. Its
+  `mnt/ext1` is mounted as `/mnt/ext1`, so the config and collection use the
+  device paths: `.../system/mnt/ext1/applications/pbanki/`.
+- On first run, `scripts/sdk-emulator/JLPT_N2_Grammar.apkg` (or
+  `PBANKI_DECK_APKG`) is copied into the collection and imported, if present.
+- Right-click the window for the emulator menu (device, display mode, events).
+- Overrides: `PROFILE=<hwconfig profile>` (e.g. `700`, `743g`, `1030`),
+  `RESMODE=<display mode>` (16 = 1264x1680, 12 = 1404x1872), `EMU_NET=host`
+  (share the host network, so the dev sync server is at
+  `http://127.0.0.1:27701/`), `EMU_APP=<binary>` (run another x86-64 InkView
+  app, e.g. the inkview-rs `waveform_probe` example).
 
-```bash
-make emulator-build      # target/emulator/pbanki.app (stripped)
-make emulator-sync       # upload to the running emulator over Wi-Fi
-```
+The emulator has no e-ink timing (the panel never reports busy), no system tray
+app, and its DPI is always 300. Use the device for timing and the tray.
 
-`emulator-sync` needs Wi-Fi enabled in the emulator: open
-`Settings > Wi-Fi`, turn on `Network Access`, and join `PocketBook-QEMU`.
-After syncing, close pbAnki (Home) and relaunch it from `Apps > USER'S`.
-The app is listed as `@pbanki`.
+### Simulated e-ink (desktop)
 
-The emulator serial console is available through the running instance:
+`cargo run --features eink-sim` in `crates/desktop` runs pbAnki on the same
+e-ink backend as the device, over a simulated 1264x1680 panel. Updates appear
+only after a panel would finish them (partial 490 ms, full 600 ms with a flash,
+fast 265 ms), reduced to the waveform's gray levels, and the panel reports busy
+in the meantime. Change the timings with
+`PBANKI_EINK_SIM_MS="full=600,partial=490,fast=265"`. Click to tap; arrows,
+Enter, Backspace, Page Up/Down are the device keys.
 
-```bash
-python3 scripts/emulator/serial.py 'uname -m'
-python3 scripts/emulator/serial.py 'wpa_cli -i eth0 status'
-```
+### Waveform probe
 
-On first launch, `make emulator-dev` also installs
-`scripts/emulator/JLPT_N2_Grammar.apkg` into the emulator's collection. Reinstall
-or swap decks manually with:
-
-```bash
-make emulator-deck                              # install the bundled deck
-PBANKI_DECK_APKG=/path/to/other.apkg make emulator-deck
-PBANKI_REINSTALL_DECK=1 make emulator-deck      # replace an existing collection
-```
-
-The install replaces `collection.anki2` in the emulator and is skipped once the
-`.pbanki-deck` marker exists; quit pbAnki before running it. Only uncompressed
-Anki package collections (`collection.anki2`/`collection.anki21`) are supported.
-
-Overrides:
-
-- `EINK_EMULATOR_DIR` — external emulator checkout (default `../eink-emulator`).
-- `PBANKI_EMULATOR_MACHINE` — emulator instance name (default `pb700`).
-- `PBANKI_EMULATOR_HEADLESS=1` — run without a window (QMP/serial still work).
-- `PBANKI_SKIP_BUILD=1` — upload the existing `target/emulator/pbanki.app`.
-
-The emulator is experimental and does not cover e-ink-specific timing, suspend,
-Bluetooth or audio. The `crates/pocketbook/src/main.rs` config path can be overridden with
-`PBANKI_CONFIG` for host-side testing; the device default is unchanged.
+`make waveform-probe` builds the inkview-rs `waveform_probe` example for the
+device (`target/pocketbook-probe/waveform-probe.app`). Copy it to
+`applications/` and start it once. It measures how long each InkView update
+keeps the panel busy and writes `applications/waveform-probe.log`. It needs the
+`../inkview-rs` checkout.
 
 ## Installation
 
-Build the release bundle with `make release`. It creates:
+Build the bundle for your device (see the table above): `make release`
+(B288/B300) or `make release-rk3566` (RK3566). Each creates:
 
 ```text
-target/pocketbook/pbanki.app   # shell launcher
-target/pocketbook/pbanki.bin   # ARM executable
+target/pocketbook[-rk3566]/pbanki.app   # shell launcher
+target/pocketbook[-rk3566]/pbanki.bin   # ARM executable
 ```
 
 1. Copy both files to `/mnt/ext1/applications/` keeping their names
@@ -137,10 +126,11 @@ when loading InkView libraries, and writes stdout/stderr to
 `/mnt/ext1/applications/pbanki/logs/pbanki.log`. It creates the `pbanki/logs/`
 folder if it does not exist. The launcher keeps a single instance via
 `/tmp/pbanki.pid`, rotates the log at launch when it exceeds 1 MiB, and records
-the start and exit status. If the application directory is not writable, it
-falls back to `/tmp/pbanki.log`. It changes into its own directory (normally
-`/mnt/ext1/applications`) before starting the binary, so relative
-`collection_path` values resolve there.
+the start and exit status. If the binary cannot start (for example, the
+RK3566 bundle on a B288 device), the log says which bundle the device needs. If
+the application directory is not writable, it falls back to `/tmp/pbanki.log`.
+It changes into its own directory (normally `/mnt/ext1/applications`) before
+starting the binary, so relative `collection_path` values resolve there.
 
 ### Importing decks
 
@@ -182,6 +172,10 @@ font_dirs = [
     "/ebrmain/fonts",
 ]
 
+# Show the PocketBook status bar (clock, battery, Wi-Fi) above pbAnki; tapping
+# it opens the system tray. Restart pbAnki after changing this.
+system_panel = true
+
 [ankiweb]
 # AnkiWeb synchronization settings
 # Leave empty to disable sync
@@ -222,8 +216,16 @@ font when needed. If no configured font covers a character, it is displayed as
 Font files are discovered by scanning `font_dirs` at startup. The defaults cover
 the PB710 runtime paths, the USB mass-storage view, and older PB700 images.
 Existing configs are migrated automatically: missing `card_font`,
-`card_fallback_fonts`, or `font_dirs` keys are added on the next launch without
-overwriting values you already set.
+`card_fallback_fonts`, `font_dirs`, or `system_panel` keys are added on the next
+launch without overwriting values you already set.
+
+### Status bar
+
+`system_panel = true` (the default) shows the PocketBook status bar (clock,
+battery, Wi-Fi) at the top of the screen, with pbAnki below it. Tapping the bar
+opens the system tray, as in the built-in apps. `false` gives pbAnki the whole
+screen. Restart pbAnki after changing it. A config written by an earlier
+version already contains `system_panel = false`; change it to `true` there.
 
 At runtime, the configured primary and fallback files are linked into
 `/tmp/pbanki-fonts`, and Slint registers that directory. This happens for both
@@ -246,8 +248,8 @@ sync-after-study, and media sync.
 - Sync runs synchronously; the UI is blocked until the current sync finishes.
 
 For local development, the companion server project at `../pbanki-sync-server`
-uses `http://127.0.0.1:27701/` (desktop) or `http://10.0.2.2:27701/` (PB700
-emulator) with the dev credentials from that project's `.env`.
+uses `http://127.0.0.1:27701/` (desktop, and the SDK emulator with
+`EMU_NET=host`) with the dev credentials from that project's `.env`.
 
 ### Supported Languages
 
@@ -265,8 +267,8 @@ Cargo.toml          # Cargo workspace: shared dependency versions, release profi
 crates/core/        # pbanki-core: session, study, sync, fonts, config, UI wiring
 crates/core/ui/     # Slint UI sources, compiled by crates/core/build.rs
 crates/pocketbook/  # pbanki: PocketBook frontend (InkView, Wi-Fi, native keyboard)
-crates/desktop/     # pbanki-desktop: desktop frontend (winit) for development
-scripts/            # emulator, PocketBook launcher, CIFS mount helper
+crates/desktop/     # pbanki-desktop: desktop frontend (winit, or eink-sim) for development
+scripts/            # SDK emulator, PocketBook launcher and device helpers
 ```
 
 ## Current Features

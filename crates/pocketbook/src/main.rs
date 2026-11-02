@@ -1,8 +1,9 @@
 use std::rc::Rc;
 
 use inkview::bindings::Inkview;
-use inkview::screen::WhichScreen;
-use inkview_slint::Event;
+use inkview::device::DeviceInfo;
+use inkview::screen::{PanelMode, WhichScreen};
+use inkview_slint::{Backend, BackendOptions, Event, UpdatePolicy};
 use pbanki_core::config::Config;
 use pbanki_core::frontend::{FrontendHooks, SyncHooks};
 use pbanki_core::{EditField, MainWindow, app};
@@ -36,21 +37,35 @@ fn main() {
                 ) {
                     panic!("expected init event first");
                 }
+                // hwconfig is loaded by InkView's init.
+                let device = log_device(iv);
 
-                // I hope this thing lives as long as the process
-                let platform: Box<dyn slint::platform::Platform> = match WhichScreen::new(iv) {
-                    WhichScreen::BB8(screen) => {
-                        Box::new(inkview_slint::Backend::new(screen, backend_tx, evt_rx))
-                    }
-                    WhichScreen::RGB24(screen) => {
-                        Box::new(inkview_slint::Backend::new(screen, backend_tx, evt_rx))
-                    }
-                };
-                slint::platform::set_platform(platform).unwrap();
-
+                // Read before the screen is opened: the panel setting decides
+                // how the framebuffer is set up.
                 let config_path =
                     std::env::var("PBANKI_CONFIG").unwrap_or_else(|_| DEFAULT_CONFIG_PATH.into());
                 let config = Config::load_or_default(&config_path);
+
+                let panel = if config.general.system_panel {
+                    PanelMode::System
+                } else {
+                    PanelMode::Hidden
+                };
+                let options = BackendOptions {
+                    policy: UpdatePolicy::for_panel(device.is_color().unwrap_or(false)),
+                };
+
+                // I hope this thing lives as long as the process
+                let platform: Box<dyn slint::platform::Platform> =
+                    match WhichScreen::with_panel(iv, panel) {
+                        WhichScreen::BB8(screen) => {
+                            Box::new(Backend::with_options(screen, backend_tx, evt_rx, options))
+                        }
+                        WhichScreen::RGB24(screen) => {
+                            Box::new(Backend::with_options(screen, backend_tx, evt_rx, options))
+                        }
+                    };
+                slint::platform::set_platform(platform).unwrap();
 
                 let hooks = FrontendHooks {
                     sync: SyncHooks {
@@ -77,6 +92,24 @@ fn main() {
             Some(())
         }
     })
+}
+
+/// Logs what the firmware reports about the device, and warns when the
+/// hwconfig DPI disagrees with the DPI the backend scales by.
+fn log_device(iv: &Inkview) -> DeviceInfo {
+    let device = DeviceInfo::query(iv);
+    eprintln!("[device] {device}");
+    let screen_dpi = iv.get_screen_dpi.as_ref().ok().map(|f| unsafe { (*f)() });
+    if let (Some(display), Some(screen_dpi)) = (device.display, screen_dpi)
+        && display.dpi != 0
+        && i64::from(display.dpi) != i64::from(screen_dpi)
+    {
+        eprintln!(
+            "[device] warning: hwconfig dpi={} but get_screen_dpi()={screen_dpi}",
+            display.dpi
+        );
+    }
+    device
 }
 
 /// Edits the settings text fields with the InkView keyboard instead of

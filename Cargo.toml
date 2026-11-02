@@ -19,8 +19,8 @@ anki_proto = { git = "https://github.com/ankitects/anki", branch = "main" }
 # Members add their backend and renderer features on top.
 slint = { version = "1.18.1", default-features = false, features = ["compat-1-2", "std", "software-renderer-systemfonts", "renderer-software"] }
 slint-build = "1.18.1"
-inkview = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-upstream-master", default-features = false }
-inkview-slint = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-upstream-master", default-features = false }
+inkview = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-device-panel", default-features = false }
+inkview-slint = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-device-panel", default-features = false }
 tokio = { version = "1", features = ["io-util"] }
 
 [profile.release]
