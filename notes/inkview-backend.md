@@ -6,7 +6,7 @@ pbAnki uses `inkview-slint` from the fork `tl27863/inkview-rs`. The fork develop
 
 | Branch | Content | Role |
 |---|---|---|
-| `pbanki-device-panel` | `pbanki-upstream-master` at `3a651ab`, plus device info, the update API, panel modes, `EinkScreen`, `UpdatePolicy`, the waveform probe, and the presenter refactor (`inkview-eink` crate, `55c0854`). Review follow-up `b9ae258..fc8ff7f` is local, not pushed (see `eink-presenter-refactor.md`) | Used by the root `Cargo.toml`. Before the refactor: `070ce4f` (rollback target) |
+| `pbanki-device-panel` | `pbanki-upstream-master` at `3a651ab`, plus device info, the update API, panel modes, `EinkScreen`, `UpdatePolicy`, the waveform probe, and the presenter refactor (`inkview-eink` crate, `55c0854`). plus the review follow-up (`fc8ff7f`, see `eink-presenter-refactor.md`) | Used by the root `Cargo.toml`. Rollback targets: `55c0854` (before the follow-up), `070ce4f` (before the refactor) |
 | `pbanki-eink-core` | The presenter refactor (`55c0854`), merged into `pbanki-device-panel` | Kept for reference |
 | `pbanki-upstream-master` | Upstream master `15cdb98` (Sep 2026), plus `a2beb6c` (pixel formats, `copy_rect`, wake), `6765a59` (presenter, damage policy, proxy, Slint 1.18.1), `3a651ab` (DPI-only scale factor) | Rollback target for `pbanki-device-panel` |
 | `pbanki-eink-refresh` | Upstream `34ae238` plus Slint `44208ff` | Older rollback target, kept unchanged |
