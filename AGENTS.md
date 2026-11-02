@@ -78,6 +78,7 @@ Dev sync server: `make -C ../pbanki-sync-server up`. The endpoint is `http://127
 | `notes/eink-logs.md` | `[eink …]` log lines and how to read them |
 | `notes/performance.md` | Profiling, PB710 baselines, waveform probe results |
 | `notes/inkview-single-thread-pump.md` | Fallback design for InkView update stalls (not implemented) |
+| `notes/eink-presenter-refactor.md` | Blitz phase 1: the e-ink presenter moved out of inkview-slint into `inkview-eink` (done) |
 | `notes/card-loading.md` | Worker jobs, `busy`, loading screens, explicit redraws |
 | `notes/sync.md` | Sync, Wi-Fi, sync hooks, dev sync server |
 | `notes/fonts.md` | Card fonts, Slint fonts, glyph embedding |
