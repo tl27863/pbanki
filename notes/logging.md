@@ -14,7 +14,7 @@ Line format:
 ```
 
 - The time is local time with milliseconds. It matches the time format of the launcher lines.
-- The message keeps its prefix: `[eink +<ms>]`, `[job N]`, `[deck …]`, `[font]`, `[device]`, `[profile]`, `[panic]`.
+- The message keeps its prefix: `[eink +<ms>]`, `[job N]`, `[deck …]`, `[sync]`, `[wifi]`, `[font]`, `[device]`, `[profile]`, `[panic]`.
 
 ## Levels and filter
 

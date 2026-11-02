@@ -45,6 +45,27 @@ Do not use `NetConnectSilent`. On the PB710 a cold radio can block for more than
 
 Other InkView network calls: `NetConnect` (interactive dialog), `NetConnect2`, `NetConnectAsync`, `NetConnect3` (6.8+), `GetNetState`, `GetLastNetConnectionError`, `NetInfo`, `EnumWirelessNetworks`, and `NetMgrPing`. `inkview::Event` does not show `EVT_NET_CONNECTED` and `EVT_NET_DISCONNECTED`. A network status would need polling.
 
+## Sync log lines
+
+Each sync logs these lines (see `logging.md`):
+
+| Line | Level |
+|---|---|
+| `[sync] <kind>: started (preparation N ms)` | info |
+| `[sync] <kind>: done in N ms, <action>: <message>` | info |
+| `[sync] <kind>: full sync required after N ms, …` | warn |
+| `[sync] <kind>: failed after N ms: <message>` | error |
+| `[sync] <kind>: not started: <error>` (for example Wi-Fi failed) | warn |
+| `[sync] <kind>: ignored, collection busy` or `sync already running` | info |
+| `[sync] media: done in N ms`, `media: off`, or `<kind>: Media sync failed: …` | info, warn |
+| `[sync] backed up the local collection before download` | info |
+| `[sync] server moved this account to <endpoint>` | info |
+
+- `<kind>` is `manual`, `startup`, `after study`, `full upload`, or `full download`.
+- The preparation time includes the Wi-Fi dialog. The sync time does not.
+- `[wifi]` lines show if the network was already connected, if pbAnki connected it (time and status), and if pbAnki disconnected it after the sync. They do not show network names (SSIDs).
+- anki logs its sync steps at `debug`. To see them, set `PBANKI_LOG=info,anki=debug`.
+
 ## Dev sync server
 
 - It is an external Docker Compose project at `../pbanki-sync-server` (not in this repository).
