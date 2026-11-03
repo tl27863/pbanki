@@ -18,6 +18,15 @@ memmap2 = "0.9"
 libc = "0.2"
 tracing.workspace = true
 tracing-subscriber.workspace = true
+blitz-dom.workspace = true
+blitz-html.workspace = true
+blitz-paint.workspace = true
+blitz-traits.workspace = true
+anyrender.workspace = true
+anyrender_vello_cpu.workspace = true
+parley.workspace = true
+peniko.workspace = true
+image.workspace = true
 
 [features]
 default = []
