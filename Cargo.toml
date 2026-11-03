@@ -22,6 +22,19 @@ slint-build = "1.18.1"
 inkview = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-device-panel", default-features = false }
 inkview-slint = { git = "https://github.com/tl27863/inkview-rs", branch = "pbanki-device-panel", default-features = false }
 tokio = { version = "1", features = ["io-util"] }
+# Card rendering (notes/blitz-card-render.md). Keep this revision equal to the
+# one in bench/blitz-render/Cargo.toml and update both together. The other
+# versions are the ones Blitz uses at this revision.
+blitz-dom = { git = "https://github.com/DioxusLabs/blitz", rev = "d0f48bd17224130c3697b9c6a2de9c090cfdebc7", default-features = false, features = ["svg"] }
+blitz-html = { git = "https://github.com/DioxusLabs/blitz", rev = "d0f48bd17224130c3697b9c6a2de9c090cfdebc7" }
+blitz-paint = { git = "https://github.com/DioxusLabs/blitz", rev = "d0f48bd17224130c3697b9c6a2de9c090cfdebc7", default-features = false, features = ["svg"] }
+blitz-traits = { git = "https://github.com/DioxusLabs/blitz", rev = "d0f48bd17224130c3697b9c6a2de9c090cfdebc7" }
+anyrender = "0.14.0"
+anyrender_vello_cpu = "0.18.0"
+parley = { version = "0.12", default-features = false, features = ["std"] }
+peniko = "0.6.0"
+# blitz-dom decodes <img> with `image` but enables no formats itself.
+image = { version = "0.25.6", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
 # Logging. anki already depends on both (same versions and features), so they
 # add no crates. pbanki_core::logging installs the subscriber.
 tracing = "0.1.41"
