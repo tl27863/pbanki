@@ -81,6 +81,11 @@ pub(crate) fn collection_file(config: &Config) -> PathBuf {
     Path::new(&config.general.collection_path).join("collection.anki2")
 }
 
+/// The media folder that `with_desktop_media_paths` sets up.
+pub(crate) fn media_folder(config: &Config) -> PathBuf {
+    collection_file(config).with_extension("media")
+}
+
 /// Builder for the configured collection. `with_desktop_media_paths` creates
 /// `collection.media/` and `collection.mdb`, which media sync needs.
 fn collection_builder(config: &Config) -> CollectionBuilder {

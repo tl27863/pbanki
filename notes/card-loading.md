@@ -33,6 +33,13 @@ Rating:
 - The rating handlers do not change `show_answer`. The answer stays visible until the overlay or the next card shows. `changed card` resets it.
 - When a job finishes, the app increments `job_seq`. Thus its overlay timer cannot fire during a later sync or job.
 
+## Card pages
+
+- The job also renders the card (notes/blitz-card-render.md). `next_card` sends both sides to the card-render thread (`CardRenderer::render`) and waits for question page 1 and the answer start page. This adds about 100–200 ms to the job; `busy` covers it.
+- The card area size comes from `MainWindow.card-area-width/height` times the window scale factor (`frontend/study.rs`, `render_context`). The study rows have fixed heights (`Constants.study_menu_height`, `study_buttons_height`), so the area is known before `LearnScreen` exists.
+- `finish_job` installs the pages in `frontend/card_pages.rs`, then `show_new_card` resets `show-answer` and `study-page` and sets the card. Do not call `set_current_card` directly (lint rule `pbanki-show-new-card`): a `changed card` handler in Slint runs after the first frame of the card, which then showed the old page state.
+- Later pages arrive from the render thread through `upgrade_in_event_loop`. If the page is the one waiting to show, `card_pages::deliver` changes `page-version` and calls `request_redraw()`, as for job results.
+
 ## Explicit redraws
 
 - The loading and result changes of card jobs call `request_redraw()` explicitly. The backend then presents their damage without more input.

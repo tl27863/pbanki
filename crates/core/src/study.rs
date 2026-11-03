@@ -6,10 +6,22 @@ use anki::scheduler::answering::{CardAnswer, Rating};
 use anki::scheduler::states::SchedulingStates;
 use anki::timestamp::TimestampMillis;
 
+use anki::card_rendering::extract_av_tags;
+use anki_proto::card_rendering::AvTag;
+
+use crate::card_render::html::{card_document, replace_av_placeholders, replace_type_tags};
+use crate::card_render::{CardHtml, CardRenderer, FirstPages, RenderArea};
 use crate::fonts::FontCatalog;
 use crate::profile::ProfileTimer;
 use crate::profile_log;
-use crate::text::{paginate_text, strip_html_remove_brackets_and_paginate};
+
+/// What the card area shows.
+pub enum CardContent {
+    /// Rendered pages (notes/blitz-card-render.md).
+    Pages(FirstPages),
+    /// A text instead of pages: no card due, or the render failed.
+    Message(String),
+}
 
 /// A card loaded from the collection. This type contains no Slint models so it
 /// can be produced on a worker thread and turned into a `CardNode` on the UI
@@ -19,27 +31,37 @@ pub struct LoadedCard {
     pub new_count: i32,
     pub learn_count: i32,
     pub due_count: i32,
-    pub question: Vec<slint::SharedString>,
-    pub answer: Vec<slint::SharedString>,
+    pub content: CardContent,
     pub durations: Vec<slint::SharedString>,
     pub states: Option<SchedulingStates>,
-    pub font: String,
+    /// Audio and TTS tags of each side, in placeholder order. Not played yet:
+    /// kept for audio support (notes/blitz-card-render.md, "Card HTML").
+    pub question_av: Vec<AvTag>,
+    pub answer_av: Vec<AvTag>,
 }
 
 impl LoadedCard {
-    fn no_cards(new_count: i32, learn_count: i32, due_count: i32, font: &str) -> Self {
+    fn no_cards(new_count: i32, learn_count: i32, due_count: i32) -> Self {
         Self {
             id: -1,
             new_count,
             learn_count,
             due_count,
-            question: vec!["No more cards due!".into()],
-            answer: Vec::new(),
+            content: CardContent::Message("No more cards due!".into()),
             durations: Vec::new(),
             states: None,
-            font: font.to_owned(),
+            question_av: Vec::new(),
+            answer_av: Vec::new(),
         }
     }
+}
+
+/// What a card job needs to render pages.
+#[derive(Clone)]
+pub struct RenderContext {
+    pub fonts: FontCatalog,
+    pub renderer: CardRenderer,
+    pub area: RenderArea,
 }
 
 /// Fetches and renders the next card. Runs on a worker thread; `set_deck`
@@ -48,9 +70,8 @@ impl LoadedCard {
 pub fn next_card(
     col: &mut Collection,
     deck_id: i64,
-    chars_per_page: i32,
     set_deck: bool,
-    fonts: &FontCatalog,
+    render: &RenderContext,
 ) -> Result<LoadedCard, String> {
     let total_timer = ProfileTimer::start();
     let set_deck_timer = ProfileTimer::start();
@@ -73,12 +94,7 @@ pub fn next_card(
             "next card empty: set_deck={set_deck_elapsed:?} queue={queue_elapsed:?} total={:?}",
             total_timer.elapsed()
         );
-        return Ok(LoadedCard::no_cards(
-            new_count,
-            learn_count,
-            due_count,
-            fonts.primary(),
-        ));
+        return Ok(LoadedCard::no_cards(new_count, learn_count, due_count));
     };
 
     let states_timer = ProfileTimer::start();
@@ -94,41 +110,30 @@ pub fn next_card(
     let render_elapsed = render_timer.elapsed();
 
     let text_timer = ProfileTimer::start();
-    let mut answer = anki::text::strip_html(rendered.answer().as_ref()).into_owned();
-
-    // Handle special case for type in cards
-    if answer.contains("[[type:") {
-        let note_opt = col
-            .storage
-            .get_note(card.card.note_id())
-            .map_err(|err| format!("could not load note: {err}"))?;
-
-        if let Some(note) = note_opt {
-            let fields = note.fields();
-            let notetype_id = note.notetype_id;
-            let notetype = col
-                .get_notetype(notetype_id)
-                .map_err(|err| format!("could not load notetype: {err}"))?;
-
-            if let Some(notetype) = notetype {
-                for (index, field) in notetype.fields.iter().enumerate() {
-                    if field.name == "Back" {
-                        if let Some(value) = fields.get(index) {
-                            answer = value.to_owned();
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    let question_html = rendered.question().into_owned();
-    let question_text = anki::text::strip_html(&question_html);
-    let combined = format!("{question_text}{answer}");
+    let tr = col.tr().clone();
+    let (question_html, question_av) = extract_av_tags(rendered.question().into_owned(), true, &tr);
+    let (answer_html, answer_av) = extract_av_tags(rendered.answer().into_owned(), false, &tr);
+    let type_fields = if answer_html.contains("[[type:") {
+        type_in_fields(col, card.card.note_id())?
+    } else {
+        Vec::new()
+    };
+    let question_html = replace_av_placeholders(&replace_type_tags(&question_html, |_| None));
+    let answer_html = replace_av_placeholders(&replace_type_tags(&answer_html, |name| {
+        type_fields
+            .iter()
+            .find(|(field, _)| field == name)
+            .map(|(_, value)| value.clone())
+    }));
+    let combined = format!(
+        "{}{}",
+        anki::text::strip_html(&question_html),
+        anki::text::strip_html(&answer_html)
+    );
     let text_elapsed = text_timer.elapsed();
 
     let font_timer = ProfileTimer::start();
-    let font_choice = fonts.choose_font(&combined);
+    let font_choice = render.fonts.choose_font(&combined);
     let font_elapsed = font_timer.elapsed();
     if !font_choice.missing.is_empty() {
         tracing::warn!(
@@ -139,17 +144,23 @@ pub fn next_card(
             font_choice.missing
         );
     }
-    let pages_timer = ProfileTimer::start();
-    let answer_text = fonts.sanitize(&answer, &font_choice.family);
 
-    let chars_per_page = chars_per_page.max(1) as usize;
-    // Sanitize after stripping: replacing a missing character inside HTML
-    // markup would corrupt tags, and coverage was checked on the visible text.
-    let question = strip_html_remove_brackets_and_paginate(&question_html, true, chars_per_page)
-        .into_iter()
-        .map(|page| slint::SharedString::from(fonts.sanitize(&page, &font_choice.family)))
-        .collect();
-    let answer = paginate_text(&answer_text, chars_per_page);
+    let pages_timer = ProfileTimer::start();
+    let area = render.area;
+    let page_height_css = area.height as f32 / area.scale;
+    let ord = card.card.template_idx();
+    let html = CardHtml {
+        question: card_document(&question_html, &rendered.css, ord, page_height_css),
+        answer: card_document(&answer_html, &rendered.css, ord, page_height_css),
+        font_family: font_choice.family,
+    };
+    let content = match render.renderer.render(html, area) {
+        Ok(pages) => CardContent::Pages(pages),
+        Err(err) => {
+            tracing::error!("[card] card {} render failed: {err}", card.card.id().0);
+            CardContent::Message(format!("Could not render this card: {err}"))
+        }
+    };
     let pages_elapsed = pages_timer.elapsed();
     let total_elapsed = total_timer.elapsed();
 
@@ -165,12 +176,38 @@ pub fn next_card(
         new_count,
         learn_count,
         due_count,
-        question,
-        answer,
+        content,
         durations: durations.into_iter().map(Into::into).collect(),
         states: Some(card.states.clone()),
-        font: font_choice.family,
+        question_av,
+        answer_av,
     })
+}
+
+/// `(field name, field HTML)` of the card's note, for `[[type:Field]]` tags.
+fn type_in_fields(
+    col: &mut Collection,
+    note_id: anki::notes::NoteId,
+) -> Result<Vec<(String, String)>, String> {
+    let note = col
+        .storage
+        .get_note(note_id)
+        .map_err(|err| format!("could not load note: {err}"))?;
+    let Some(note) = note else {
+        return Ok(Vec::new());
+    };
+    let notetype = col
+        .get_notetype(note.notetype_id)
+        .map_err(|err| format!("could not load notetype: {err}"))?;
+    let Some(notetype) = notetype else {
+        return Ok(Vec::new());
+    };
+    Ok(notetype
+        .fields
+        .iter()
+        .zip(note.fields())
+        .map(|(field, value)| (field.name.clone(), value.clone()))
+        .collect())
 }
 
 /// Applies an answer and returns the next card. Runs on a worker thread.
@@ -182,9 +219,8 @@ pub fn rate_card(
     elapsed: u32,
     rating: i32,
     deck_id: i64,
-    chars_per_page: i32,
     set_deck: bool,
-    fonts: &FontCatalog,
+    render: &RenderContext,
 ) -> Result<LoadedCard, String> {
     let (new_state, rating_enum) = match rating {
         0 => (states.again.clone(), Rating::Again),
@@ -218,7 +254,7 @@ pub fn rate_card(
         return Err(format!("could not save the rating: {err}"));
     }
 
-    next_card(col, deck_id, chars_per_page, set_deck, fonts)
+    next_card(col, deck_id, set_deck, render)
 }
 
 #[allow(dead_code)]
@@ -227,6 +263,7 @@ fn assert_worker_types_are_send() {
     assert_send::<Collection>();
     assert_send::<SchedulingStates>();
     assert_send::<LoadedCard>();
+    assert_send::<RenderContext>();
 }
 
 #[cfg(test)]
@@ -265,9 +302,25 @@ mod tests {
     #[test]
     fn rate_card_reports_failed_answer() {
         let (dir, mut col) = temp_collection("rate");
-        let fonts = FontCatalog::build("none", &[], &[]);
+        let render = RenderContext {
+            fonts: FontCatalog::build("none", &[], &[]),
+            renderer: CardRenderer::spawn(
+                crate::card_render::RendererConfig {
+                    format: crate::card_render::PageFormat::Gray8,
+                    font_files: Vec::new(),
+                    font_families: Vec::new(),
+                    media_folder: dir.clone(),
+                },
+                Box::new(|_| {}),
+            ),
+            area: RenderArea {
+                width: 100,
+                height: 100,
+                scale: 1.0,
+            },
+        };
 
-        let result = rate_card(&mut col, 424242, new_states(), 0, 2, 1, 100, true, &fonts);
+        let result = rate_card(&mut col, 424242, new_states(), 0, 2, 1, true, &render);
 
         let err = result.err().expect("answering a missing card must fail");
         assert!(err.starts_with("could not save the rating"), "{err}");

@@ -10,11 +10,12 @@ use anki::collection::Collection;
 use slint::ComponentHandle;
 
 use super::FrontendHooks;
+use super::card_pages;
 use super::models::{card_node, error_card};
 use crate::profile::ProfileTimer;
 use crate::profile_log;
 use crate::session::{LearnSession, clear_current_card, reset_session_memory};
-use crate::study::LoadedCard;
+use crate::study::{CardContent, LoadedCard};
 use crate::{DeckNode, MainWindow};
 
 /// Delay before a deck entry shows its loading screen. Loads that finish
@@ -87,8 +88,8 @@ pub(super) fn spawn_card_job<F>(
     let Some(mut collection) = session.collection.borrow_mut().take() else {
         session.busy.set(false);
         reset_session_memory(&session);
-        ui_ref.set_card_font(session.font_catalog.primary().into());
-        ui_ref.set_current_card(error_card(deck, "collection is unavailable"));
+        card_pages::clear();
+        show_new_card(&ui_ref, error_card(deck, "collection is unavailable"));
         ui_ref.set_loading(false);
         ui_ref.set_busy(false);
         if full_transition {
@@ -206,10 +207,22 @@ fn finish_job(
         *job.session.collection.borrow_mut() = Some(collection);
     }
 
-    let (card, font) = match result {
-        Ok(loaded) => {
+    let card = match result {
+        Ok(mut loaded) => {
             job.session.current_deck_id.set(Some(job.deck.id));
-            let font = loaded.font.clone();
+            let content =
+                std::mem::replace(&mut loaded.content, CardContent::Message(String::new()));
+            let (pages, message) = match content {
+                CardContent::Pages(first) => {
+                    let pages = (first.question_pages, first.answer_pages, first.answer_start);
+                    card_pages::install(first);
+                    (pages, String::new())
+                }
+                CardContent::Message(message) => {
+                    card_pages::clear();
+                    ((0, 0, 0), message)
+                }
+            };
             if loaded.id == -1 {
                 clear_current_card(&job.session);
             } else {
@@ -217,17 +230,15 @@ fn finish_job(
                 *job.session.states.borrow_mut() = loaded.states.clone();
                 *job.session.start_time.borrow_mut() = Some(Instant::now());
             }
-            (card_node(loaded, job.deck.clone()), font)
+            card_node(loaded, job.deck.clone(), pages, message)
         }
         Err(err) => {
             tracing::error!("Failed to load card: {err}");
             // The deck selection may not have completed; select it again on
             // the next entry.
             reset_session_memory(&job.session);
-            (
-                error_card(job.deck.clone(), &err),
-                job.session.font_catalog.primary().to_owned(),
-            )
+            card_pages::clear();
+            error_card(job.deck.clone(), &err)
         }
     };
 
@@ -238,8 +249,7 @@ fn finish_job(
         .set(job.session.job_seq.get().wrapping_add(1));
 
     if let Some(ui) = job.ui.upgrade() {
-        ui.set_card_font(font.into());
-        ui.set_current_card(card);
+        show_new_card(&ui, card);
         ui.set_loading(false);
         ui.set_busy(false);
         if job.full_transition {
@@ -255,4 +265,13 @@ fn finish_job(
         job.id,
         delivery_timer.elapsed()
     );
+}
+
+/// Shows a new card at question page 1. The page state is reset before the
+/// card changes, so the first frame of the card already shows that page (a
+/// `changed card` handler in Slint would run after it).
+fn show_new_card(ui: &MainWindow, card: crate::CardNode) {
+    ui.set_show_answer(false);
+    ui.set_study_page(0);
+    ui.set_current_card(card);
 }

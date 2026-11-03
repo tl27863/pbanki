@@ -18,8 +18,13 @@ export struct DeckTree {
 export struct CardNode {
 	id: duration,
 	deck: DeckNode,
-	question: [string],
-	answer: [string],
+	// Rendered pages of each side (notes/blitz-card-render.md). 0 when the
+	// card area shows `message` instead.
+	question-pages: int,
+	answer-pages: int,
+	// The answer page that Show answer opens (the `#answer` marker).
+	answer-start: int,
+	message: string,
 	durations: [string],
 }
 

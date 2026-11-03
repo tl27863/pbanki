@@ -1,0 +1,17 @@
+id: pbanki-show-new-card
+valid:
+  - |
+    fn show_new_card(ui: &MainWindow, card: CardNode) {
+        ui.set_show_answer(false);
+        ui.set_study_page(0);
+        ui.set_current_card(card);
+    }
+  - show_new_card(&ui, error_card(deck, "collection is unavailable"));
+invalid:
+  - ui.set_current_card(card);
+  - |
+    fn finish_job(job: &PendingJob) {
+        if let Some(ui) = job.ui.upgrade() {
+            ui.set_current_card(card_node(loaded, deck, pages, message));
+        }
+    }

@@ -10,15 +10,37 @@ use super::card_jobs::{DECK_LOADING_DELAY, Loading, RATING_LOADING_DELAY, spawn_
 use super::models::deck_tree;
 use super::sync::{SyncTrigger, schedule_sync};
 use crate::MainWindow;
+use crate::card_render::{CardRenderer, RenderArea};
 use crate::config::Config;
 use crate::session::LearnSession;
-use crate::study::{next_card, rate_card};
+use crate::study::{RenderContext, next_card, rate_card};
+
+/// What a card job needs to render pages for the current window.
+fn render_context(
+    ui: &MainWindow,
+    session: &LearnSession,
+    renderer: &CardRenderer,
+) -> RenderContext {
+    let scale = ui.window().scale_factor();
+    // Round down, so the page never is larger than the area.
+    let device = |logical: f32| (logical * scale).floor().max(1.0) as u32;
+    RenderContext {
+        fonts: session.font_catalog.clone(),
+        renderer: renderer.clone(),
+        area: RenderArea {
+            width: device(ui.get_card_area_width()),
+            height: device(ui.get_card_area_height()),
+            scale,
+        },
+    }
+}
 
 pub(super) fn wire(
     ui: &MainWindow,
     session: &Rc<LearnSession>,
     config: &Rc<RefCell<Config>>,
     hooks: &FrontendHooks,
+    renderer: &CardRenderer,
 ) {
     {
         let ui_weak = ui.as_weak();
@@ -65,10 +87,14 @@ pub(super) fn wire(
         let ui_weak = ui.as_weak();
         let session = session.clone();
         let hooks = hooks.clone();
-        ui.on_rate(move |rating, deck, chars_per_page| {
+        let renderer = renderer.clone();
+        ui.on_rate(move |rating, deck| {
             if session.busy.get() {
                 return;
             }
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
 
             let card_id = session.current_card.borrow().unwrap_or(-1);
             let Some(states) = session.states.borrow().clone() else {
@@ -85,7 +111,7 @@ pub(super) fn wire(
                 .unwrap_or(0);
             let deck_id = deck.id;
             let set_deck = session.current_deck_id.get() != Some(deck_id);
-            let fonts = session.font_catalog.clone();
+            let render = render_context(&ui, &session, &renderer);
 
             spawn_card_job(
                 ui_weak.clone(),
@@ -96,15 +122,7 @@ pub(super) fn wire(
                 Loading::Deferred(RATING_LOADING_DELAY),
                 move |col| {
                     rate_card(
-                        col,
-                        card_id,
-                        states,
-                        elapsed,
-                        rating,
-                        deck_id,
-                        chars_per_page,
-                        set_deck,
-                        &fonts,
+                        col, card_id, states, elapsed, rating, deck_id, set_deck, &render,
                     )
                 },
             );
@@ -115,14 +133,18 @@ pub(super) fn wire(
         let ui_weak = ui.as_weak();
         let session = session.clone();
         let hooks = hooks.clone();
-        ui.on_deck_clicked(move |deck, chars_per_page| {
+        let renderer = renderer.clone();
+        ui.on_deck_clicked(move |deck| {
             if session.busy.get() {
                 return;
             }
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
 
             let deck_id = deck.id;
             let set_deck = session.current_deck_id.get() != Some(deck_id);
-            let fonts = session.font_catalog.clone();
+            let render = render_context(&ui, &session, &renderer);
             tracing::info!("[deck {deck_id}] entering, set_deck={set_deck}");
 
             spawn_card_job(
@@ -132,7 +154,7 @@ pub(super) fn wire(
                 deck,
                 "Loading deck...",
                 Loading::Transition(DECK_LOADING_DELAY),
-                move |col| next_card(col, deck_id, chars_per_page, set_deck, &fonts),
+                move |col| next_card(col, deck_id, set_deck, &render),
             );
         });
     }
