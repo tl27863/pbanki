@@ -6,6 +6,7 @@ import { RatingButton } from "../components/rating_button.slint";
 
 component Menu {
     in property <CardNode> card;
+    in property <string> page-label;
     callback home_clicked();
 
     HorizontalLayout {
@@ -56,6 +57,13 @@ component Menu {
         HorizontalLayout {
             horizontal-stretch: 1;
             alignment: end;
+
+            Text {
+                text: page-label;
+                font-family: Constants.font_family_standard;
+                font-size: Constants.font_size_subcontent;
+                vertical-alignment: center;
+            }
         }
     }
 }
@@ -63,32 +71,33 @@ component Menu {
 export component LearnScreen {
     in property <Translations> tr;
     in property <CardNode> card;
-    in property <string> card_font: "Ryo Gothic PlusN";
+    in property <length> card-area-height;
+    in property <int> page-version;
     in property <bool> loading: false;
     in property <string> loading_message: "Loading...";
     // A card job owns the collection. Study buttons are disabled so taps meant
     // for the next card are not swallowed by the previous card's buttons (and
     // their press feedback does not add panel updates).
     in property <bool> busy: false;
+    // Both are reset from Rust before a new card is set, so the first frame
+    // of a card already shows its question page 1.
     in-out property <bool> show_answer;
-    property <bool> valid_deck: card.id != (-1 * 1ms) && card.answer != [];
-    property <[string]> pages: show_answer ? card.answer : card.question;
-    out property <int> current-page: 0;
-    property <int> total-pages: pages.length;
-
-    changed total-pages => {
-        if current-page > total-pages {
-            current-page = 0;
-        }
-    }
-
-    changed card => {
-        current-page = 0;
-        show_answer = false;
-    }
+    in-out property <int> current-page: 0;
+    property <bool> valid_deck: card.id != (-1 * 1ms);
+    // 0 when the card area shows `card.message` instead of pages.
+    property <int> side-pages: show_answer ? card.answer-pages : card.question-pages;
+    property <int> total-pages: max(1, side-pages);
 
     callback home_clicked();
     callback rate(rating: int);
+    pure callback page-image(answer: bool, page: int, version: int) -> image;
+
+    // Show answer opens the page with Anki's `#answer` marker, not page 1:
+    // the answer usually repeats the question first.
+    function reveal() {
+        current-page = card.answer-start;
+        show_answer = true;
+    }
 
     forward-focus: focus-scope;
 
@@ -115,7 +124,7 @@ export component LearnScreen {
                     current-page += 1;
                     accept
                 } else if !show_answer && (current-page == total-pages - 1 || current-page == 0) {
-                    show_answer = true;
+                    reveal();
                     accept
                 } else if show_answer && (current-page == total-pages - 1 || current-page == 0) {
                     if event.text == Key.LeftArrow || event.text == Key.DownArrow || event.text == Key.PageDown {
@@ -154,13 +163,16 @@ export component LearnScreen {
             if !loading: VerticalLayout {
                 alignment: start;
                 Menu {
+                    height: Constants.study_menu_height;
                     card: card;
+                    page-label: total-pages > 1 ? (current-page + 1) + "/" + total-pages : "";
                     home_clicked => {
                         home_clicked();
                     }
                 }
 
                 sgr := SwipeGestureHandler {
+                    height: card-area-height;
                     handle-swipe-down: current-page > 0;
                     handle-swipe-up: current-page < total-pages - 1;
                     swiped => {
@@ -175,13 +187,27 @@ export component LearnScreen {
                         }
                     }
 
-                    VerticalLayout {
-                        Text {
-                            text: (current-page < pages.length ? pages[current-page] : "") + (pages.length > 1 ? "\n\n[" + (current-page + 1) + "/" + total-pages + "]" : "");
-                            font-family: card_font;
+                    Rectangle {
+                        clip: true;
+
+                        // The page is rendered at the physical size of this
+                        // area, so it is drawn 1:1 (`phx`), with no scaling.
+                        if side-pages > 0: Image {
+                            x: 0;
+                            y: 0;
+                            source: root.page-image(show_answer, current-page, page-version);
+                            width: self.source.width * 1phx;
+                            height: self.source.height * 1phx;
+                            image-rendering: pixelated;
+                        }
+
+                        if side-pages == 0: Text {
+                            width: parent.width;
+                            height: parent.height;
+                            text: card.message;
+                            font-family: Constants.font_family_standard;
                             font-size: Constants.font_size_content;
                             wrap: TextWrap.word-wrap;
-                            overflow: TextOverflow.clip;
                             vertical-alignment: center;
                             horizontal-alignment: center;
                         }
@@ -190,6 +216,7 @@ export component LearnScreen {
             }
 
             if !loading && valid_deck: VerticalLayout {
+                height: Constants.study_buttons_height;
                 alignment: end;
                 HorizontalLayout {
                     alignment: center;
@@ -200,7 +227,7 @@ export component LearnScreen {
                         enabled: !busy;
 
                         clicked => {
-                            show_answer = true;
+                            reveal();
                         }
                     }
 

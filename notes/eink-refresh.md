@@ -4,7 +4,7 @@ The backend sends two types of screen update: content updates and full presents.
 
 ## Content updates
 
-Content updates are the answer reveal, rating to the next card, and pagination. They use the damage path:
+Content updates are the answer reveal, rating to the next card, and page turns. They use the damage path:
 
 - Panel idle: `PartialUpdate` of the damage bounding box.
 - Panel busy: `DynamicUpdate` for the accumulated damage, up to 100k px. Larger damage waits for the finalizer.

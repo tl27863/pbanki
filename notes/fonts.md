@@ -15,8 +15,14 @@
   - It memory-maps the files into the shared fontique collection of Slint through `slint::fontique_011::shared_collection()`.
   - This needs the feature `unstable-fontique-011` in `crates/core/Cargo.toml`. It also needs the Slint platform, so call it after `set_platform`.
   - It orders the fonts by the configured family. It puts them first in the Hira, Kana, Hani, and Hang fallback chains.
-- `fonts.rs` also checks card text against the cmap of each font. `next_card` selects the first font that covers the full card. If no font does, it replaces the missing glyphs with `?`.
+- `fonts.rs` also checks card text against the cmap of each font. `next_card` selects the first font that covers the full card and logs a `[font]` warning with the characters that no font covers. Missing glyphs are no longer replaced with `?`: cards are HTML now, and changing characters inside markup could break tags.
 - Card text uses `Config.general.card_font` plus `card_fallback_fonts`. The UI stays `Monospace` (Roboto on the PB710).
+
+## Card renderer fonts
+
+- Blitz uses parley 0.12 (fontique 0.12). Slint has fontique 0.11. Thus the card render thread has its own font collection (`card_render/raster.rs`, `CardFonts`). It memory-maps the same files (`card_font_files`).
+- There are no system fonts in it. Anki's default `.card { font-family: arial }` names a family that is not installed. Thus the card fonts are the fallback chain of all common scripts and of the generic families. For each card, the family from `choose_font` goes first.
+- The catalog registers one file per family: the first match in directory order. With a family that has several files (weights, italics), bold and italic HTML then use that one face. On a desktop with Noto Sans, the first file is `NotoSans-Black.ttf`, so all card text is heavy. The PocketBook card fonts are single files (Ryo Gothic Medium). Register all faces of a family if this is a problem.
 
 Do not use `SLINT_FONT_PATH` or `SLINT_DEFAULT_FONT`. In Slint 1.18 they make the registered fonts the generic sans-serif chain. `Monospace` is not a real family, so it falls back to sans-serif. It then rendered in Ryo Gothic instead of Roboto. The lint rule `pbanki-no-slint-font-env` checks this.
 

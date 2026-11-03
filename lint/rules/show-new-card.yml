@@ -1,0 +1,27 @@
+id: pbanki-show-new-card
+language: Rust
+severity: error
+message: Set a new card through `show_new_card`, not `set_current_card`.
+note: |
+  `show_new_card` (crates/core/src/frontend/card_jobs.rs) resets
+  `show-answer` and `study-page` before the card changes. Otherwise the
+  first frame of the new card binds `page-image` to the old page state
+  (for example the answer page of the previous card) and the panel gets
+  an extra update. See notes/blitz-card-render.md, "Slint side".
+files:
+  - crates/**/*.rs
+rule:
+  kind: call_expression
+  has:
+    field: function
+    kind: field_expression
+    has:
+      field: field
+      regex: ^set_current_card$
+  not:
+    inside:
+      kind: function_item
+      has:
+        field: name
+        regex: ^show_new_card$
+      stopBy: end

@@ -8,6 +8,12 @@ export global Constants {
     out property <length> padding_standard: 20px;
     out property <length> spacing_standard: 5px;
     out property <length> spacing_medium: 10px;
+
+    // Fixed heights of the study screen rows. The card area gets the rest, and
+    // its size must be known before the screen exists (the card is rendered
+    // for it on the worker).
+    out property <length> study_menu_height: 44px;
+    out property <length> study_buttons_height: 84px;
 }
 
 export struct Translations {

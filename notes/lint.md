@@ -19,6 +19,7 @@ The rules check invariants that clippy cannot check.
 | `pbanki-no-slint-font-env` | Rust | No `SLINT_FONT_PATH` or `SLINT_DEFAULT_FONT` |
 | `pbanki-sync-state-constructor` | Rust | Build `SyncState` through its constructors outside `frontend/models.rs` |
 | `pbanki-collection-busy-check` | Rust | Hint: collection borrows in `ui.on_*` closures without a `busy` check |
+| `pbanki-show-new-card` | Rust | A new card goes through `show_new_card` (resets the page state first), not `set_current_card` |
 | `pbanki-checkbox-font-size` | Slint | Each CheckBox sets `font-size` |
 | `pbanki-no-focus-in-init` | Slint | No `focus()` in `init` |
 | `pbanki-study-controls-no-states` | Slint | No `states`, `transitions`, `animate`, `.pressed`, or `.has-hover` in `plain_button.slint` and `rating_button.slint` |

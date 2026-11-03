@@ -175,22 +175,6 @@ impl FontCatalog {
         }
     }
 
-    /// Replaces characters not present in `family` with `?`.
-    pub fn sanitize(&self, text: &str, family: &str) -> String {
-        let Some(coverage) = self.coverage_for(family) else {
-            return text.to_owned();
-        };
-        text.chars()
-            .map(|character| {
-                if character.is_whitespace() || coverage.contains(&(character as u32)) {
-                    character
-                } else {
-                    '?'
-                }
-            })
-            .collect()
-    }
-
     /// Font files for the primary and fallback families, one per family.
     pub fn files_to_register(&self) -> Vec<PathBuf> {
         let mut result: Vec<PathBuf> = Vec::new();
@@ -296,11 +280,7 @@ pub fn register_catalog_fonts(catalog: &FontCatalog) {
     use slint::fontique_011::fontique::{Blob, FallbackKey, Script};
 
     let timer = ProfileTimer::start();
-    let mut files = catalog.files_to_register();
-    if files.is_empty() {
-        tracing::warn!("[font] no configured font files found; trying built-in paths");
-        files.extend(default_font_file());
-    }
+    let files = card_font_files(catalog);
 
     let mut collection = slint::fontique_011::shared_collection();
     let mut families = Vec::new();
@@ -354,6 +334,26 @@ pub fn register_catalog_fonts(catalog: &FontCatalog) {
         families.len()
     );
     profile_log!("font registration: {:?}", timer.elapsed());
+}
+
+/// The card font files: the configured families, or the built-in PocketBook
+/// font when none is found. Slint and the card renderer load the same files.
+pub fn card_font_files(catalog: &FontCatalog) -> Vec<PathBuf> {
+    let mut files = catalog.files_to_register();
+    if files.is_empty() {
+        tracing::warn!("[font] no configured font files found; trying built-in paths");
+        files.extend(default_font_file());
+    }
+    files
+}
+
+/// The configured card families found in the catalog, in priority order.
+pub fn card_font_families(catalog: &FontCatalog) -> Vec<String> {
+    catalog
+        .registered_faces()
+        .into_iter()
+        .map(|(family, _, _)| family)
+        .collect()
 }
 
 /// The PocketBook Japanese font, used when no configured font file exists.

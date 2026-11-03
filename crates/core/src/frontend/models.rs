@@ -96,8 +96,14 @@ fn flatten_tree_recursive(node: &DeckTreeNode, parent_index: i32, result: &Rc<Ve
 }
 
 /// Builds the displayed card, with the deck's counts taken from the queue the
-/// card was loaded from.
-pub(crate) fn card_node(card: LoadedCard, deck: DeckNode) -> CardNode {
+/// card was loaded from. `pages` is `(question pages, answer pages, answer
+/// start)`; all 0 when the card area shows `message`.
+pub(crate) fn card_node(
+    card: LoadedCard,
+    deck: DeckNode,
+    pages: (u32, u32, u32),
+    message: String,
+) -> CardNode {
     let deck = DeckNode {
         new: card.new_count,
         learn: card.learn_count,
@@ -107,8 +113,10 @@ pub(crate) fn card_node(card: LoadedCard, deck: DeckNode) -> CardNode {
     CardNode {
         id: card.id,
         deck,
-        question: Rc::new(VecModel::from(card.question)).into(),
-        answer: Rc::new(VecModel::from(card.answer)).into(),
+        question_pages: pages.0 as i32,
+        answer_pages: pages.1 as i32,
+        answer_start: pages.2 as i32,
+        message: message.into(),
         durations: Rc::new(VecModel::from(card.durations)).into(),
     }
 }
@@ -117,11 +125,10 @@ pub(crate) fn error_card(deck: DeckNode, message: &str) -> CardNode {
     CardNode {
         id: -1,
         deck,
-        question: Rc::new(VecModel::from(vec![slint::SharedString::from(format!(
-            "Could not load card: {message}"
-        ))]))
-        .into(),
-        answer: ModelRc::new(VecModel::default()),
+        question_pages: 0,
+        answer_pages: 0,
+        answer_start: 0,
+        message: format!("Could not load card: {message}").into(),
         durations: ModelRc::new(VecModel::default()),
     }
 }

@@ -4,6 +4,7 @@ use inkview::bindings::Inkview;
 use inkview::device::DeviceInfo;
 use inkview::screen::{PanelMode, WhichScreen};
 use inkview_slint::{Backend, BackendOptions, Event, UpdatePolicy};
+use pbanki_core::card_render::PageFormat;
 use pbanki_core::config::Config;
 use pbanki_core::frontend::{FrontendHooks, SyncHooks};
 use pbanki_core::{EditField, MainWindow, app};
@@ -57,15 +58,20 @@ fn main() {
                 };
 
                 // I hope this thing lives as long as the process
-                let platform: Box<dyn slint::platform::Platform> =
+                // Card pages use the framebuffer's format: gray pages for a
+                // gray panel, color pages for a color one.
+                let (platform, page_format): (Box<dyn slint::platform::Platform>, _) =
                     match WhichScreen::with_panel(iv, panel) {
-                        WhichScreen::BB8(screen) => {
-                            Box::new(Backend::with_options(screen, backend_tx, evt_rx, options))
-                        }
-                        WhichScreen::RGB24(screen) => {
-                            Box::new(Backend::with_options(screen, backend_tx, evt_rx, options))
-                        }
+                        WhichScreen::BB8(screen) => (
+                            Box::new(Backend::with_options(screen, backend_tx, evt_rx, options)),
+                            PageFormat::Gray8,
+                        ),
+                        WhichScreen::RGB24(screen) => (
+                            Box::new(Backend::with_options(screen, backend_tx, evt_rx, options)),
+                            PageFormat::Rgb8,
+                        ),
                     };
+                tracing::info!("[card] page format {page_format:?}");
                 slint::platform::set_platform(platform).unwrap();
 
                 let hooks = FrontendHooks {
@@ -74,6 +80,7 @@ fn main() {
                         after_sync: Some(Rc::new(move || network::disconnect_after_sync(iv))),
                     },
                     full_present: Some(Rc::new(inkview_slint::request_full_present)),
+                    page_format,
                 };
                 let app = app::start(config, true, hooks);
                 wire_native_keyboard(&app.ui, iv);

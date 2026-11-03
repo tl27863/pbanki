@@ -35,6 +35,7 @@ fn main() {
     pbanki_core::logging::init();
 
     use inkview_slint::{Backend, Event};
+    use pbanki_core::card_render::PageFormat;
 
     let (events_tx, events_rx) = std::sync::mpsc::channel::<Event>();
     let backend_tx = events_tx.clone();
@@ -50,6 +51,8 @@ fn main() {
             slint::platform::set_platform(Box::new(backend)).unwrap();
             let hooks = FrontendHooks {
                 full_present: Some(Rc::new(inkview_slint::request_full_present)),
+                // The simulator has a BB8 (gray) framebuffer.
+                page_format: PageFormat::Gray8,
                 ..FrontendHooks::default()
             };
             let app = app::start(load_config(), false, hooks);

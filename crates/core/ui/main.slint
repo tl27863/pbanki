@@ -26,16 +26,22 @@ export component MainWindow inherits Window {
     in-out property <SyncSettings> sync_settings;
     in-out property <SyncState> sync_state;
     in property <bool> native_keyboard: false;
-    in property <string> card_font: "Ryo Gothic PlusN";
 
-    property <length> available-content-height: root.height - 3 * Constants.font_size_content - 2 * Constants.padding_standard - 100px;
-    property <length> available-content-width: root.width - 2 * Constants.padding_standard;
-    property <int> chars-per-page: 
-        Math.floor(available-content-width / (Constants.font_size_content * 0.6)) * Math.floor(available-content-height / (Constants.font_size_content * 1.3));
+    // The card area of the study screen. Rust renders the card pages for this
+    // size (times the scale factor) before `LearnScreen` exists.
+    out property <length> card-area-width: root.width - 2 * Constants.padding_standard;
+    out property <length> card-area-height: root.height - 2 * Constants.padding_standard - Constants.study_menu_height - Constants.study_buttons_height;
+    // Study page state, set from Rust when a new card arrives.
+    in-out property <bool> show-answer;
+    in-out property <int> study-page;
+    // Changes when a page that was not ready arrives (see `page-image`).
+    in property <int> page-version;
 
     callback update_deck_tree();
-    callback deck_clicked(deck: DeckNode, chars-per-page: int);
-    callback rate(rating: int, deck: DeckNode, chars-per-page: int);
+    callback deck_clicked(deck: DeckNode);
+    callback rate(rating: int, deck: DeckNode);
+    // The image of one card page. `version` only makes the binding run again.
+    pure callback page-image(answer: bool, page: int, version: int) -> image;
     callback open_settings();
     callback save_settings(settings: SyncSettings);
     callback sync_now();
@@ -79,7 +85,7 @@ export component MainWindow inherits Window {
                 // `learning` is set from Rust once the loading screen or the
                 // card is ready, so the previous card is never shown.
                 if !busy {
-                    deck_clicked(deck, chars-per-page);
+                    deck_clicked(deck);
                 }
             }
             settings_clicked => {
@@ -92,7 +98,13 @@ export component MainWindow inherits Window {
         if learning: LearnScreen {
             tr: tr;
             card: current_card;
-            card_font: card_font;
+            card-area-height: card-area-height;
+            show_answer <=> root.show-answer;
+            current-page <=> root.study-page;
+            page-version: page-version;
+            page-image(answer, page, version) => {
+                return root.page-image(answer, page, version);
+            }
             loading: loading;
             loading_message: loading_message;
             busy: busy;
@@ -104,7 +116,7 @@ export component MainWindow inherits Window {
                 }
             }
             rate(rating) => {
-                rate(rating, current_card.deck, chars-per-page);
+                rate(rating, current_card.deck);
             }
         }
     }

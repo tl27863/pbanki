@@ -10,7 +10,7 @@ Profiling is opt-in through the `profile` cargo feature. `pbanki-core` defines i
 
 With the feature:
 
-- `crates/core/src/study.rs` splits card loading into deck selection, queue, state descriptions, render, text processing, font choice, pagination, and answer write.
+- `crates/core/src/study.rs` splits card loading into deck selection, queue, state descriptions, render, text processing (HTML, type-in and audio tags), font choice, page rendering (`pages=`, see `[card] render`), and answer write.
 - `crates/core/src/fonts.rs` logs the catalog, coverage, and registration times.
 - `app::start` logs the startup times.
 - `spawn_font_probe` starts 10 s after launch at nice 19. It logs:
