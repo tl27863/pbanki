@@ -428,13 +428,14 @@ impl RenderThread {
         html: CardHtml,
         area: RenderArea,
     ) -> Result<FirstPages, String> {
+        // Drop the old documents first: the card on screen and the lookahead
+        // cards are the only ones in memory. Also when the area is invalid:
+        // the old card is not on screen any more, so its queued pages stop.
+        self.card = None;
         if area.width == 0 || area.height == 0 || area.scale <= 0.0 {
             return Err(format!("invalid card area {area:?}"));
         }
         let started = Instant::now();
-        // Drop the old documents first: the card on screen and the lookahead
-        // cards are the only ones in memory.
-        self.card = None;
         let ahead = self
             .ahead
             .iter()
