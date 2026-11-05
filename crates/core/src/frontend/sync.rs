@@ -228,6 +228,8 @@ fn run_sync_after_delay<F>(
                 if let Some(ui) = ui.upgrade() {
                     ui.set_sync_state(SyncState::error(&err));
                     ui.set_busy(false);
+                    // See notes/card-loading.md, "Explicit redraws".
+                    ui.window().request_redraw();
                 }
                 return;
             }
@@ -297,6 +299,9 @@ fn apply_sync_result(
         } else if result.success {
             ui.set_deck_tree(deck_tree(session));
         }
+        // Property changes alone sometimes do not render on the PB710 until
+        // the next touch. See notes/card-loading.md, "Explicit redraws".
+        ui.window().request_redraw();
     }
 }
 

@@ -6,9 +6,12 @@ use std::time::Instant;
 use inkview::bindings::{
     Inkview, NET_ABORTED, NET_CONNECTED, NET_EAUTH, NET_EBADCONF, NET_EDISABLED, NET_EFLIGHTMODE,
     NET_EHARDWARE, NET_EINIT, NET_ENOTCONF, NET_ENOTFOUND, NET_ETIMEOUT, NET_EWRONGKEY, NET_OK,
+    NET_WIFIREADY,
 };
 
 static CONNECTED_BY_APP: AtomicBool = AtomicBool::new(false);
+/// The radio was off before the sync and pbAnki powered it on.
+static POWERED_BY_APP: AtomicBool = AtomicBool::new(false);
 static OWNED_SSID: Mutex<Option<String>> = Mutex::new(None);
 
 // Log lines say whether the network changed but never name it (SSIDs are
@@ -21,16 +24,28 @@ pub fn ensure_connected(iv: &'static Inkview) -> Result<(), String> {
         return Ok(());
     }
 
-    tracing::info!("[wifi] not connected; powering the radio and opening the connect dialog");
+    let flags = query_network(iv);
+    let radio_on = flags & NET_WIFIREADY != 0;
+    tracing::info!(
+        "[wifi] not connected; radio {} (flags {flags:#x}); opening the connect dialog",
+        if radio_on { "on" } else { "off, powering it" }
+    );
     let started = Instant::now();
-    unsafe {
-        iv.WiFiPower(1);
+    if !radio_on {
+        POWERED_BY_APP.store(true, Ordering::SeqCst);
+        unsafe {
+            iv.WiFiPower(1);
+        }
     }
 
     // NetConnectSilent can block for minutes on a cold radio, and can abort
     // when called off-thread. The system dialog is the reliable path used by
     // KOReader and lets the user enable Wi-Fi without leaving the app.
     let status = unsafe { iv.NetConnect(std::ptr::null()) };
+    // The dialog drew over our frame, and InkView does not always send a
+    // Foreground event afterwards. The request is consumed after the sync
+    // callback returns, so the present shows the sync result.
+    inkview_slint::request_full_present();
 
     let elapsed_ms = started.elapsed().as_millis();
     if status == NET_OK as c_int || is_connected(iv) {
@@ -40,35 +55,81 @@ pub fn ensure_connected(iv: &'static Inkview) -> Result<(), String> {
         Ok(())
     } else {
         tracing::warn!("[wifi] connection failed after {elapsed_ms} ms (status {status})");
+        if POWERED_BY_APP.load(Ordering::SeqCst) {
+            power_off(iv);
+        }
         clear_ownership();
         Err(connection_error(status))
     }
 }
 
 pub fn disconnect_after_sync(iv: &'static Inkview) {
-    if !CONNECTED_BY_APP.swap(false, Ordering::SeqCst) {
+    let owned = CONNECTED_BY_APP.swap(false, Ordering::SeqCst);
+    let powered = POWERED_BY_APP.swap(false, Ordering::SeqCst);
+    if !owned {
         return;
     }
 
     let expected = OWNED_SSID.lock().ok().and_then(|mut owned| owned.take());
     let current = current_ssid(iv);
+    let same_network = should_disconnect(expected.as_deref(), current.as_deref());
 
-    if should_disconnect(expected.as_deref(), current.as_deref()) {
-        tracing::info!("[wifi] disconnecting the connection pbAnki made");
-        unsafe {
-            iv.NetDisconnect();
+    match after_sync_action(owned, powered, same_network) {
+        AfterSync::Keep => {
+            tracing::info!("[wifi] network changed during sync; leaving it connected");
         }
-    } else {
-        tracing::info!("[wifi] network changed during sync; leaving it connected");
+        AfterSync::Disconnect => {
+            tracing::info!("[wifi] disconnecting the connection pbAnki made");
+            unsafe {
+                iv.NetDisconnect();
+            }
+        }
+        AfterSync::DisconnectAndPowerOff => {
+            tracing::info!("[wifi] disconnecting the connection pbAnki made");
+            unsafe {
+                iv.NetDisconnect();
+            }
+            power_off(iv);
+        }
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum AfterSync {
+    Keep,
+    Disconnect,
+    DisconnectAndPowerOff,
+}
+
+/// What to do after a sync. `owned`: pbAnki made the connection. `powered`:
+/// pbAnki turned the radio on. `same_network`: the connection is still the
+/// one pbAnki made (the user did not switch networks during the sync).
+fn after_sync_action(owned: bool, powered: bool, same_network: bool) -> AfterSync {
+    match (owned, same_network, powered) {
+        (false, _, _) | (true, false, _) => AfterSync::Keep,
+        (true, true, false) => AfterSync::Disconnect,
+        (true, true, true) => AfterSync::DisconnectAndPowerOff,
+    }
+}
+
+fn power_off(iv: &Inkview) {
+    tracing::info!("[wifi] powering the radio off (pbAnki turned it on)");
+    unsafe {
+        iv.WiFiPower(0);
+    }
+}
+
+fn query_network(iv: &Inkview) -> u32 {
+    unsafe { iv.QueryNetwork() as u32 }
+}
+
 fn is_connected(iv: &Inkview) -> bool {
-    unsafe { (iv.QueryNetwork() as u32 & NET_CONNECTED) != 0 }
+    query_network(iv) & NET_CONNECTED != 0
 }
 
 fn clear_ownership() {
     CONNECTED_BY_APP.store(false, Ordering::SeqCst);
+    POWERED_BY_APP.store(false, Ordering::SeqCst);
     if let Ok(mut owned) = OWNED_SSID.lock() {
         *owned = None;
     }
@@ -140,7 +201,31 @@ fn connection_error(status: c_int) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::should_disconnect;
+    use super::{AfterSync, after_sync_action, should_disconnect};
+
+    #[test]
+    fn powers_off_a_radio_pbanki_turned_on() {
+        assert_eq!(
+            after_sync_action(true, true, true),
+            AfterSync::DisconnectAndPowerOff
+        );
+    }
+
+    #[test]
+    fn leaves_a_radio_that_was_already_on() {
+        assert_eq!(after_sync_action(true, false, true), AfterSync::Disconnect);
+    }
+
+    #[test]
+    fn keeps_radio_and_connection_when_user_switched_networks() {
+        assert_eq!(after_sync_action(true, true, false), AfterSync::Keep);
+        assert_eq!(after_sync_action(true, false, false), AfterSync::Keep);
+    }
+
+    #[test]
+    fn leaves_connections_pbanki_did_not_make() {
+        assert_eq!(after_sync_action(false, false, true), AfterSync::Keep);
+    }
 
     #[test]
     fn disconnects_when_owned_ssid_is_still_active() {

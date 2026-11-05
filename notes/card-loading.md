@@ -45,7 +45,7 @@ Rating:
 
 - The loading and result changes of card jobs call `request_redraw()` explicitly. The backend then presents their damage without more input.
 - On the PB710, property invalidation alone sometimes left a loading screen or a delivered card invisible until the next touch. This happened also when the worker finished in milliseconds.
-- The `request_redraw()` calls in `spawn_card_job`, its loading timer, and `finish_job` are intentional.
+- The `request_redraw()` calls in `spawn_card_job`, its loading timer, and `finish_job` are intentional. The same applies to the sync result and the sync error in `frontend/sync.rs`.
 - After an InkView or Slint upgrade, do these checks on the device before you remove them. None of these steps must need an extra touch.
   1. Cold launch, then deck selection.
   2. Loading screen to card.

@@ -30,8 +30,10 @@
 `ensure_connected()`:
 
 1. It checks `QueryNetwork() & NET_CONNECTED`.
-2. If there is no connection, it starts the radio with `WiFiPower(1)`.
+2. If there is no connection, it checks `QueryNetwork() & NET_WIFIREADY`. If the radio is off, it starts the radio with `WiFiPower(1)` and records that pbAnki powered it.
 3. Then it shows the system `NetConnect(NULL)` dialog. The user can enable and select Wi-Fi without leaving the app.
+4. After the dialog, it calls `inkview_slint::request_full_present()`. The dialog drew over the frame, and InkView does not always send `Foreground` after it (no event when the radio was already on). The request is consumed after the sync callback, so the present shows the sync result.
+5. If the connection fails and pbAnki powered the radio, it powers the radio off again.
 
 Failures give actionable messages. They do not open the sync settings.
 
@@ -42,6 +44,7 @@ Do not use `NetConnectSilent`. On the PB710 a cold radio can block for more than
 - It disconnects only connections that the app made.
 - After it connects, the app records the active SSID with `NetInfo()`. If the SSID changed during the sync, it does not call `NetDisconnect()`. Thus a network that the user selected during the sync stays connected.
 - If Wi-Fi was connected before the sync, the app leaves it connected.
+- If pbAnki powered the radio, it calls `WiFiPower(0)` after `NetDisconnect()`. `NetDisconnect()` alone leaves the radio on, and the system then reconnects by itself. If the radio was on before (connected or idle), it stays on.
 
 Other InkView network calls: `NetConnect` (interactive dialog), `NetConnect2`, `NetConnectAsync`, `NetConnect3` (6.8+), `GetNetState`, `GetLastNetConnectionError`, `NetInfo`, `EnumWirelessNetworks`, and `NetMgrPing`. `inkview::Event` does not show `EVT_NET_CONNECTED` and `EVT_NET_DISCONNECTED`. A network status would need polling.
 
@@ -63,7 +66,7 @@ Each sync logs these lines (see `logging.md`):
 
 - `<kind>` is `manual`, `startup`, `after study`, `full upload`, or `full download`.
 - The preparation time includes the Wi-Fi dialog. The sync time does not.
-- `[wifi]` lines show if the network was already connected, if pbAnki connected it (time and status), and if pbAnki disconnected it after the sync. They do not show network names (SSIDs).
+- `[wifi]` lines show if the network was already connected, the radio state and raw `QueryNetwork` flags, if pbAnki connected it (time and status), and if pbAnki disconnected it or powered the radio off after the sync. They do not show network names (SSIDs).
 - anki logs its sync steps at `debug`. To see them, set `PBANKI_LOG=info,anki=debug`.
 
 ## Dev sync server
