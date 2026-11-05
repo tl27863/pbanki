@@ -124,5 +124,7 @@ scripts/pocketbook/*.tgz
 scripts/pocketbook/*.deb
 scripts/pocketbook/*.log
 
-# Local research notes; keep out of the repo unless explicitly added
+# Local research notes and benches; keep out of the repo unless explicitly added
 fusion-response*.md
+notes/deep-research/
+bench/

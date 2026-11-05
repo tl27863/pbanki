@@ -40,7 +40,7 @@ const ANKI_CSS: &str =
     ".card { font-family: arial; font-size: 20px; text-align: center; color: black; }";
 
 fn doc(body: &str, css: &str) -> String {
-    card_document(body, css, 0, AREA.height as f32 / AREA.scale)
+    card_document(body, css, 0, AREA.height as f32 / AREA.scale, true)
 }
 
 fn long_text(paragraphs: usize) -> String {
@@ -66,6 +66,7 @@ fn spawn(
             font_files: vec![font],
             font_families: Vec::new(),
             media_folder: media,
+            image_cache: ImageCacheSize::DEFAULT,
         },
         Box::new(move |page| {
             let _ = tx.send(page);
@@ -125,7 +126,7 @@ fn line_bands_match_the_painted_ink() {
         assert!(pair[0].bottom <= pair[1].top + 0.5, "{pair:?}");
     }
     let mut raster = raster::Raster::new(AREA.width, AREA.height);
-    let page = raster.render_page(&mut doc, AREA.scale, 0.0, AREA.height, PageFormat::Gray8);
+    let (page, _) = raster.render_page(&mut doc, AREA.scale, 0.0, AREA.height, PageFormat::Gray8);
     let ink = ink_rows(&page);
     assert!(!ink.is_empty());
     for y in &ink {
@@ -347,4 +348,93 @@ fn ruby_text_sits_above_its_base() {
     assert_eq!(runs.len(), 2, "reading not above the base: {runs:?}");
     let (reading, base) = (runs[0], runs[1]);
     assert!(reading.1 - reading.0 < base.1 - base.0, "{runs:?}");
+}
+
+#[test]
+fn a_card_rendered_ahead_gives_the_same_pages() {
+    let Some(font) = host_font() else { return };
+    let (renderer, _rx) = spawn(font.clone(), PageFormat::Gray8, std::env::temp_dir());
+    let next = card("<p>Next</p>", "<p>Next</p><hr id=answer><p>Its answer.</p>");
+    renderer
+        .render(card("<p>Now</p>", "<p>Now</p>"), AREA)
+        .unwrap();
+    renderer.lookahead(vec![next.clone()], AREA);
+    let ahead = renderer.render(next.clone(), AREA).unwrap();
+    assert!(ahead.from_lookahead);
+
+    let (fresh_renderer, _rx) = spawn(font, PageFormat::Gray8, std::env::temp_dir());
+    let fresh = fresh_renderer.render(next, AREA).unwrap();
+    assert!(!fresh.from_lookahead);
+    assert_eq!(
+        (ahead.question_pages, ahead.answer_pages, ahead.answer_start),
+        (fresh.question_pages, fresh.answer_pages, fresh.answer_start)
+    );
+    assert!(ahead.question.data == fresh.question.data);
+    assert!(ahead.answer.data == fresh.answer.data);
+}
+
+#[test]
+fn a_changed_card_or_area_is_rendered_again() {
+    let Some(font) = host_font() else { return };
+    let (renderer, _rx) = spawn(font, PageFormat::Gray8, std::env::temp_dir());
+    let next = card("<p>Next</p>", "<p>Next</p>");
+    renderer.lookahead(vec![next.clone()], AREA);
+    // The note was edited: another string.
+    let edited = card("<p>Next!</p>", "<p>Next</p>");
+    assert!(!renderer.render(edited, AREA).unwrap().from_lookahead);
+
+    renderer.lookahead(vec![next.clone()], AREA);
+    let smaller = RenderArea {
+        height: AREA.height - 10,
+        ..AREA
+    };
+    assert!(!renderer.render(next, smaller).unwrap().from_lookahead);
+}
+
+#[test]
+fn a_new_lookahead_list_keeps_only_its_cards() {
+    let Some(font) = host_font() else { return };
+    let (renderer, _rx) = spawn(font, PageFormat::Gray8, std::env::temp_dir());
+    let [b, c, d] = ["B", "C", "D"].map(|text| card(&format!("<p>{text}</p>"), "<p>x</p>"));
+    renderer.lookahead(vec![b.clone(), c.clone()], AREA);
+    assert!(renderer.render(b.clone(), AREA).unwrap().from_lookahead);
+    // The next rating: C is still ahead, D is new.
+    renderer.lookahead(vec![c.clone(), d.clone()], AREA);
+    assert!(renderer.render(c, AREA).unwrap().from_lookahead);
+    // A deck entry clears the list.
+    renderer.lookahead(Vec::new(), AREA);
+    assert!(!renderer.render(d, AREA).unwrap().from_lookahead);
+    // A card that was served is not served twice.
+    assert!(!renderer.render(b, AREA).unwrap().from_lookahead);
+}
+
+#[test]
+fn wanted_pages_still_arrive_during_lookahead_work() {
+    let Some(font) = host_font() else { return };
+    let (renderer, pages_rx) = spawn(font, PageFormat::Gray8, std::env::temp_dir());
+    let long = long_text(12);
+    let first = renderer.render(card(&long, &long), AREA).unwrap();
+    renderer.lookahead(
+        vec![
+            card(&long_text(30), &long_text(30)),
+            card(&long_text(31), &long_text(31)),
+        ],
+        AREA,
+    );
+    renderer.want(first.seq, Side::Question, 2);
+    // The two prefetched pages (no `#answer`: answer page 1 too) and the
+    // wanted page arrive. Pages of the card on screen go before lookahead
+    // work (`RenderThread::work_unit`).
+    let mut got: Vec<(Side, u32)> = (0..3)
+        .map(|_| {
+            let page = pages_rx.recv_timeout(Duration::from_secs(30)).unwrap();
+            assert_eq!(page.seq, first.seq);
+            (page.side, page.page)
+        })
+        .collect();
+    got.sort_by_key(|(side, page)| (side.index(), *page));
+    assert_eq!(
+        got,
+        vec![(Side::Question, 1), (Side::Question, 2), (Side::Answer, 1)]
+    );
 }

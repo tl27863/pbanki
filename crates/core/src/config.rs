@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+
+use crate::card_render::ImageCacheSize;
 use std::fs;
 use std::path::{Path, PathBuf};
 use toml_edit::{Array, DocumentMut, Item, Table, Value, value};
@@ -27,6 +29,18 @@ pub struct GeneralConfig {
     /// opens the system tray) above the app. Takes effect after a restart.
     #[serde(default = "default_system_panel")]
     pub system_panel: bool,
+    /// Draw `box-shadow` on cards. False (the default) removes all box
+    /// shadows (`card_render::html`, `NO_SHADOW_CSS`): a blurred shadow costs
+    /// about 170 ms per page on the PB710. Config file only, no settings UI.
+    #[serde(default)]
+    pub card_shadows: bool,
+    /// Decoded image cache of the card renderer, all images together (MB).
+    /// 0 turns it off. Config file only.
+    #[serde(default = "default_image_cache_mb")]
+    pub image_cache_mb: u32,
+    /// The largest single image the cache keeps (MB of RGBA). Config file only.
+    #[serde(default = "default_image_cache_max_image_mb")]
+    pub image_cache_max_image_mb: u32,
 }
 
 /// Comment written above `system_panel` in the template and when the key is
@@ -35,6 +49,21 @@ const SYSTEM_PANEL_COMMENT: &str = "\n# Show the PocketBook status bar (clock, b
 
 fn default_system_panel() -> bool {
     true
+}
+
+/// Comment written above `card_shadows` in the template and when the key is
+/// added to an existing config.
+const CARD_SHADOWS_COMMENT: &str = "\n# Draw the box shadows of card templates. Blurred shadows are slow on e-ink\n# (about 0.2 s per page on a PB710), so they are off by default. Restart\n# pbAnki after changing this.\n";
+
+/// Comment written above `image_cache_mb` when the key is added.
+const IMAGE_CACHE_COMMENT: &str = "\n# Memory for decoded card images, in MB: all images together, and the largest\n# single image kept (a 1920x1080 picture is 8 MB). A cached image is not\n# decoded again on the next card. 0 turns the cache off. Restart pbAnki after\n# changing this.\n";
+
+fn default_image_cache_mb() -> u32 {
+    (ImageCacheSize::DEFAULT.total >> 20) as u32
+}
+
+fn default_image_cache_max_image_mb() -> u32 {
+    (ImageCacheSize::DEFAULT.max_image >> 20) as u32
 }
 
 fn default_card_font() -> String {
@@ -111,6 +140,9 @@ impl Default for Config {
                 card_fallback_fonts: default_card_fallback_fonts(),
                 font_dirs: default_font_dirs(),
                 system_panel: default_system_panel(),
+                card_shadows: false,
+                image_cache_mb: default_image_cache_mb(),
+                image_cache_max_image_mb: default_image_cache_max_image_mb(),
             },
             ankiweb: AnkiWebConfig {
                 username: String::new(),
@@ -157,6 +189,18 @@ font_dirs = [
 # Show the PocketBook status bar (clock, battery, Wi-Fi) above pbAnki; tapping
 # it opens the system tray. Restart pbAnki after changing this.
 system_panel = true
+
+# Draw the box shadows of card templates. Blurred shadows are slow on e-ink
+# (about 0.2 s per page on a PB710), so they are off by default. Restart
+# pbAnki after changing this.
+card_shadows = false
+
+# Memory for decoded card images, in MB: all images together, and the largest
+# single image kept (a 1920x1080 picture is 8 MB). A cached image is not
+# decoded again on the next card. 0 turns the cache off. Restart pbAnki after
+# changing this.
+image_cache_mb = 32
+image_cache_max_image_mb = 16
 
 [ankiweb]
 # AnkiWeb synchronization settings
@@ -206,6 +250,9 @@ impl Config {
                 "card_fallback_fonts",
                 "font_dirs",
                 "system_panel",
+                "card_shadows",
+                "image_cache_mb",
+                "image_cache_max_image_mb",
             ]
             .iter()
             .any(|key| !general_has_key(&contents, key));
@@ -263,11 +310,26 @@ impl Config {
         general["card_fallback_fonts"] =
             Item::Value(string_array(&self.general.card_fallback_fonts));
         general["font_dirs"] = Item::Value(string_array(&self.general.font_dirs));
-        let new_key = !general.contains_key("system_panel");
-        general["system_panel"] = value(self.general.system_panel);
-        if new_key && let Some(mut key) = general.key_mut("system_panel") {
-            key.leaf_decor_mut().set_prefix(SYSTEM_PANEL_COMMENT);
-        }
+        set_with_comment(
+            general,
+            "system_panel",
+            value(self.general.system_panel),
+            SYSTEM_PANEL_COMMENT,
+        );
+        set_with_comment(
+            general,
+            "card_shadows",
+            value(self.general.card_shadows),
+            CARD_SHADOWS_COMMENT,
+        );
+        set_with_comment(
+            general,
+            "image_cache_mb",
+            value(i64::from(self.general.image_cache_mb)),
+            IMAGE_CACHE_COMMENT,
+        );
+        general["image_cache_max_image_mb"] =
+            value(i64::from(self.general.image_cache_max_image_mb));
 
         let ankiweb = table_mut(&mut document, "ankiweb")?;
         ankiweb["username"] = value(&self.ankiweb.username);
@@ -300,6 +362,15 @@ impl Config {
 
     pub fn update_and_save(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.save()
+    }
+}
+
+/// Sets `key`. A key that is new in this file gets `comment` above it.
+fn set_with_comment(table: &mut Table, key: &str, item: Item, comment: &str) {
+    let new_key = !table.contains_key(key);
+    table[key] = item;
+    if new_key && let Some(mut key) = table.key_mut(key) {
+        key.leaf_decor_mut().set_prefix(comment);
     }
 }
 
@@ -422,6 +493,65 @@ password = ""
         assert!(config.general.system_panel);
         assert!(contents.contains("# Show the PocketBook status bar"));
         assert!(contents.contains("system_panel = true"));
+        assert!(!config.general.card_shadows);
+        assert!(contents.contains("# Draw the box shadows of card templates"));
+        assert!(contents.contains("card_shadows = false"));
+        assert_eq!(
+            (
+                config.general.image_cache_mb,
+                config.general.image_cache_max_image_mb
+            ),
+            (32, 16)
+        );
+        assert!(contents.contains("# Memory for decoded card images"));
+        assert!(contents.contains("image_cache_mb = 32"));
+        assert!(contents.contains("image_cache_max_image_mb = 16"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn card_settings_are_read_and_preserved() {
+        let path = temp_config_path("shadows");
+        fs::write(
+            &path,
+            r#"[general]
+language = "en-GB"
+collection_path = "/tmp/collection"
+card_font = "Ryo Gothic PlusN"
+card_fallback_fonts = []
+font_dirs = []
+system_panel = true
+card_shadows = true
+image_cache_mb = 8
+image_cache_max_image_mb = 2
+
+[ankiweb]
+username = ""
+password = ""
+"#,
+        )
+        .unwrap();
+
+        let mut config = Config::load_or_create(path.to_str().unwrap()).unwrap();
+        assert!(config.general.card_shadows);
+        assert_eq!(
+            (
+                config.general.image_cache_mb,
+                config.general.image_cache_max_image_mb
+            ),
+            (8, 2)
+        );
+        config.ankiweb.username = "user".into();
+        config.save().unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("card_shadows = true"));
+        assert!(contents.contains("image_cache_mb = 8"));
+        assert!(contents.contains("image_cache_max_image_mb = 2"));
+        // Present already, so no comments are added.
+        assert!(!contents.contains("# Draw the box shadows"));
+        assert!(!contents.contains("# Memory for decoded card images"));
 
         let _ = fs::remove_file(path);
     }

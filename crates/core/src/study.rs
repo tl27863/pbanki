@@ -1,6 +1,7 @@
 //! Card loading and rating. These functions only touch the collection, so
 //! they run on the card-job worker thread (see `frontend::card_jobs`).
 
+use anki::card::Card;
 use anki::collection::Collection;
 use anki::scheduler::answering::{CardAnswer, Rating};
 use anki::scheduler::states::SchedulingStates;
@@ -10,7 +11,7 @@ use anki::card_rendering::extract_av_tags;
 use anki_proto::card_rendering::AvTag;
 
 use crate::card_render::html::{card_document, replace_av_placeholders, replace_type_tags};
-use crate::card_render::{CardHtml, CardRenderer, FirstPages, RenderArea};
+use crate::card_render::{CardHtml, CardRenderer, FirstPages, PendingRender, RenderArea};
 use crate::fonts::FontCatalog;
 use crate::profile::ProfileTimer;
 use crate::profile_log;
@@ -38,6 +39,12 @@ pub struct LoadedCard {
     /// kept for audio support (notes/blitz-card-render.md, "Card HTML").
     pub question_av: Vec<AvTag>,
     pub answer_av: Vec<AvTag>,
+    /// The queue kind of this card (`New`, `Review`, `Learning`), for logs.
+    /// (rslib does not export the enum.)
+    pub queue_kind: String,
+    /// The cards after this one in the queue when it was loaded: the cards a
+    /// render-ahead cache would prepare (notes/deep-research/card-page-cache.md).
+    pub predicted_next: Vec<i64>,
 }
 
 impl LoadedCard {
@@ -52,9 +59,15 @@ impl LoadedCard {
             states: None,
             question_av: Vec::new(),
             answer_av: Vec::new(),
+            queue_kind: String::new(),
+            predicted_next: Vec::new(),
         }
     }
 }
+
+/// Cards fetched from the queue: the current one and the next two, which
+/// `LoadedCard::predicted_next` reports.
+const QUEUE_FETCH: usize = 3;
 
 /// What a card job needs to render pages.
 #[derive(Clone)]
@@ -62,6 +75,8 @@ pub struct RenderContext {
     pub fonts: FontCatalog,
     pub renderer: CardRenderer,
     pub area: RenderArea,
+    /// `[general] card_shadows` of the config.
+    pub shadows: bool,
 }
 
 /// Fetches and renders the next card. Runs on a worker thread; `set_deck`
@@ -83,13 +98,20 @@ pub fn next_card(
 
     let queue_timer = ProfileTimer::start();
     let queued_cards = col
-        .get_queued_cards(1, false)
+        .get_queued_cards(QUEUE_FETCH, false)
         .map_err(|err| format!("could not load the card queue: {err}"))?;
     let queue_elapsed = queue_timer.elapsed();
     let new_count = queued_cards.new_count as i32;
     let learn_count = queued_cards.learning_count as i32;
     let due_count = queued_cards.review_count as i32;
+    if set_deck {
+        // A deck entry after a sync also comes here (`reset_session_memory`
+        // clears the deck): pages rendered ahead before it could show media
+        // that the sync replaced.
+        render.renderer.lookahead(Vec::new(), render.area);
+    }
     let Some(card) = queued_cards.cards.first() else {
+        render.renderer.lookahead(Vec::new(), render.area);
         profile_log!(
             "next card empty: set_deck={set_deck_elapsed:?} queue={queue_elapsed:?} total={:?}",
             total_timer.elapsed()
@@ -103,18 +125,89 @@ pub fn next_card(
         .unwrap_or_else(|_| vec![String::new(); 4]);
     let states_elapsed = states_timer.elapsed();
 
-    let render_timer = ProfileTimer::start();
-    let rendered = col
-        .render_existing_card(card.card.id(), false, false)
-        .map_err(|err| format!("could not render card: {err}"))?;
-    let render_elapsed = render_timer.elapsed();
+    let html_timer = ProfileTimer::start();
+    let documents = card_documents(col, &card.card, &render.fonts, render.area, render.shadows)?;
+    let html_elapsed = html_timer.elapsed();
 
-    let text_timer = ProfileTimer::start();
+    let pages_timer = ProfileTimer::start();
+    let pending = render.renderer.start_render(documents.html, render.area);
+    // While the render thread renders this card, build the documents of the
+    // next cards in the queue, so it can render them ahead
+    // (notes/deep-research/card-page-cache.md, B).
+    let ahead_timer = ProfileTimer::start();
+    let ahead = queued_cards.cards[1..]
+        .iter()
+        .filter_map(|next| {
+            card_documents(col, &next.card, &render.fonts, render.area, render.shadows)
+                .map_err(|err| tracing::warn!("[card] lookahead card {}: {err}", next.card.id().0))
+                .ok()
+                .map(|documents| documents.html)
+        })
+        .collect();
+    render.renderer.lookahead(ahead, render.area);
+    let ahead_elapsed = ahead_timer.elapsed();
+    let content = match pending.and_then(PendingRender::wait) {
+        Ok(pages) => CardContent::Pages(pages),
+        Err(err) => {
+            tracing::error!("[card] card {} render failed: {err}", card.card.id().0);
+            CardContent::Message(format!("Could not render this card: {err}"))
+        }
+    };
+    let pages_elapsed = pages_timer.elapsed();
+    let total_elapsed = total_timer.elapsed();
+
+    profile_log!(
+        "card {} load: set_deck={set_deck_elapsed:?} queue={queue_elapsed:?} \
+         states={states_elapsed:?} html={html_elapsed:?} pages={pages_elapsed:?} \
+         (lookahead html {ahead_elapsed:?}) \
+         total={total_elapsed:?}",
+        card.card.id().0
+    );
+
+    Ok(LoadedCard {
+        id: card.card.id().0,
+        new_count,
+        learn_count,
+        due_count,
+        content,
+        durations: durations.into_iter().map(Into::into).collect(),
+        states: Some(card.states.clone()),
+        question_av: documents.question_av,
+        answer_av: documents.answer_av,
+        queue_kind: format!("{:?}", card.kind),
+        predicted_next: queued_cards.cards[1..]
+            .iter()
+            .map(|next| next.card.id().0)
+            .collect(),
+    })
+}
+
+/// The documents of one card for `CardRenderer::render`, and its audio tags.
+pub struct CardDocuments {
+    pub html: CardHtml,
+    pub question_av: Vec<AvTag>,
+    pub answer_av: Vec<AvTag>,
+}
+
+/// Renders the card templates and builds both documents. This is Anki's
+/// template render only, no layout. The host render harness
+/// (`examples/render_deck.rs`) uses it too.
+pub fn card_documents(
+    col: &mut Collection,
+    card: &Card,
+    fonts: &FontCatalog,
+    area: RenderArea,
+    shadows: bool,
+) -> Result<CardDocuments, String> {
+    let rendered = col
+        .render_existing_card(card.id(), false, false)
+        .map_err(|err| format!("could not render card: {err}"))?;
+
     let tr = col.tr().clone();
     let (question_html, question_av) = extract_av_tags(rendered.question().into_owned(), true, &tr);
     let (answer_html, answer_av) = extract_av_tags(rendered.answer().into_owned(), false, &tr);
     let type_fields = if answer_html.contains("[[type:") {
-        type_in_fields(col, card.card.note_id())?
+        type_in_fields(col, card.note_id())?
     } else {
         Vec::new()
     };
@@ -130,55 +223,27 @@ pub fn next_card(
         anki::text::strip_html(&question_html),
         anki::text::strip_html(&answer_html)
     );
-    let text_elapsed = text_timer.elapsed();
 
-    let font_timer = ProfileTimer::start();
-    let font_choice = render.fonts.choose_font(&combined);
-    let font_elapsed = font_timer.elapsed();
+    let font_choice = fonts.choose_font(&combined);
     if !font_choice.missing.is_empty() {
         tracing::warn!(
             "[font] card {}: {} character(s) not covered by '{}': {:?}",
-            card.card.id().0,
+            card.id().0,
             font_choice.missing.len(),
             font_choice.family,
             font_choice.missing
         );
     }
 
-    let pages_timer = ProfileTimer::start();
-    let area = render.area;
     let page_height_css = area.height as f32 / area.scale;
-    let ord = card.card.template_idx();
+    let ord = card.template_idx();
     let html = CardHtml {
-        question: card_document(&question_html, &rendered.css, ord, page_height_css),
-        answer: card_document(&answer_html, &rendered.css, ord, page_height_css),
+        question: card_document(&question_html, &rendered.css, ord, page_height_css, shadows),
+        answer: card_document(&answer_html, &rendered.css, ord, page_height_css, shadows),
         font_family: font_choice.family,
     };
-    let content = match render.renderer.render(html, area) {
-        Ok(pages) => CardContent::Pages(pages),
-        Err(err) => {
-            tracing::error!("[card] card {} render failed: {err}", card.card.id().0);
-            CardContent::Message(format!("Could not render this card: {err}"))
-        }
-    };
-    let pages_elapsed = pages_timer.elapsed();
-    let total_elapsed = total_timer.elapsed();
-
-    profile_log!(
-        "card {} load: set_deck={set_deck_elapsed:?} queue={queue_elapsed:?} \
-         states={states_elapsed:?} render={render_elapsed:?} text={text_elapsed:?} \
-         font={font_elapsed:?} pages={pages_elapsed:?} total={total_elapsed:?}",
-        card.card.id().0
-    );
-
-    Ok(LoadedCard {
-        id: card.card.id().0,
-        new_count,
-        learn_count,
-        due_count,
-        content,
-        durations: durations.into_iter().map(Into::into).collect(),
-        states: Some(card.states.clone()),
+    Ok(CardDocuments {
+        html,
         question_av,
         answer_av,
     })
@@ -310,6 +375,7 @@ mod tests {
                     font_files: Vec::new(),
                     font_families: Vec::new(),
                     media_folder: dir.clone(),
+                    image_cache: crate::card_render::ImageCacheSize::OFF,
                 },
                 Box::new(|_| {}),
             ),
@@ -318,6 +384,7 @@ mod tests {
                 height: 100,
                 scale: 1.0,
             },
+            shadows: true,
         };
 
         let result = rate_card(&mut col, 424242, new_states(), 0, 2, 1, true, &render);

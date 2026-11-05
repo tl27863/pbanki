@@ -11,7 +11,7 @@ The repository is a Cargo workspace with one `Cargo.lock` and one `target/`. The
   - `app.rs` — startup for both frontends. `app::start(config, native_keyboard, hooks)` returns an `App`. `App::run` starts the auto-sync and the event loop.
   - `session.rs` — `LearnSession`, `init_session`, `reopen_collection`, `reset_session_memory`.
   - `study.rs` — card loading and rating on the worker thread (`LoadedCard`, `next_card`, `rate_card`).
-  - `card_render/` — card pages rendered with Blitz: `mod.rs` (`CardRenderer`, the render thread), `html.rs` (card document, type-in and audio tags), `paginate.rs` (page breaks from line boxes), `raster.rs` (card fonts, media, pixels). See `notes/blitz-card-render.md`.
+  - `card_render/` — card pages rendered with Blitz: `mod.rs` (`CardRenderer`, the render thread), `html.rs` (card document, type-in and audio tags), `paginate.rs` (page breaks from line boxes), `raster.rs` (card fonts, media, pixels), `image_cache.rs` (decoded images, kept as PAM). See `notes/blitz-card-render.md`.
   - `sync/` — `mod.rs` (sync, full sync, media sync), `client.rs` (`SyncManager`), `auth.rs` (login, endpoint), `backup.rs` (backup before a full download).
   - `frontend/` — Slint wiring: `mod.rs` (`FrontendHooks`, `init_ui`, `wire_callbacks`), `card_jobs.rs`, `card_pages.rs` (page store for `page-image`), `study.rs`, `settings.rs`, `sync.rs` (`SyncHooks`), `models.rs` (view models, `SyncState` constructors).
   - `config.rs`, `fonts.rs`, `logging.rs` (log subscriber), `profile.rs`.
@@ -80,6 +80,7 @@ Dev sync server: `make -C ../pbanki-sync-server up`. The endpoint is `http://127
 | `notes/inkview-single-thread-pump.md` | Fallback design for InkView update stalls (not implemented) |
 | `notes/eink-presenter-refactor.md` | Blitz phase 1: the e-ink presenter moved out of inkview-slint into `inkview-eink` (done) |
 | `notes/blitz-card-render.md` | Blitz card pages in the study session: render thread, pagination, colors, audio placeholders |
+| `notes/test-decks.md` | CSS bench deck, host render harness, render log analyzer |
 | `notes/card-loading.md` | Worker jobs, `busy`, loading screens, explicit redraws |
 | `notes/sync.md` | Sync, Wi-Fi, sync hooks, dev sync server |
 | `notes/fonts.md` | Card fonts, Slint fonts, glyph embedding |

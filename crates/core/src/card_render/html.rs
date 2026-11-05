@@ -32,11 +32,25 @@ const OVERRIDE_CSS: &str = "\
 *, *::before, *::after { animation: none !important; transition: none !important; }
 ";
 
+/// With `card_shadows = false` in the config. vello_cpu blurs a shadow on
+/// every page that shows it: about 170 ms per page for the Yap clip panel on
+/// the PB710, more for larger blurs (notes/test-decks.md). `text-shadow` stays:
+/// it costs a few ms.
+const NO_SHADOW_CSS: &str = "\
+*, *::before, *::after { box-shadow: none !important; }
+";
+
 /// Builds the document for one side.
 ///
 /// `page_height_css` limits images to one page, so an image never needs a
-/// hard cut across two pages.
-pub fn card_document(body: &str, note_css: &str, ord: u16, page_height_css: f32) -> String {
+/// hard cut across two pages. `shadows` false removes all box shadows.
+pub fn card_document(
+    body: &str,
+    note_css: &str,
+    ord: u16,
+    page_height_css: f32,
+    shadows: bool,
+) -> String {
     let mut out = String::with_capacity(body.len() + note_css.len() + 512);
     out.push_str("<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>");
     out.push_str(BASE_CSS);
@@ -45,6 +59,9 @@ pub fn card_document(body: &str, note_css: &str, ord: u16, page_height_css: f32)
     out.push_str(note_css);
     out.push_str("</style><style>");
     out.push_str(OVERRIDE_CSS);
+    if !shadows {
+        out.push_str(NO_SHADOW_CSS);
+    }
     let _ = write!(
         out,
         "</style></head><body class=\"card card{}\">",
@@ -170,7 +187,7 @@ mod tests {
 
     #[test]
     fn document_has_card_class_and_css() {
-        let doc = card_document("<p>hi</p>", ".card { color: red }", 1, 500.0);
+        let doc = card_document("<p>hi</p>", ".card { color: red }", 1, 500.0, true);
         assert!(doc.contains("<body class=\"card card2\"><p>hi</p></body>"));
         assert!(doc.contains(".card { color: red }"));
         assert!(doc.contains("max-height: 500px"));
@@ -178,5 +195,13 @@ mod tests {
         // animation override comes last.
         assert!(doc.find("background-color: white").unwrap() < doc.find("color: red").unwrap());
         assert!(doc.find("color: red").unwrap() < doc.find("animation: none").unwrap());
+        assert!(!doc.contains("box-shadow"));
+    }
+
+    #[test]
+    fn shadows_off_comes_after_the_note_css() {
+        let css = ".panel { box-shadow: 0 6px 24px rgba(0,0,0,.18) !important }";
+        let doc = card_document("<p>hi</p>", css, 0, 500.0, false);
+        assert!(doc.find(css).unwrap() < doc.find("box-shadow: none !important").unwrap());
     }
 }

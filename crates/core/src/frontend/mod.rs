@@ -15,7 +15,7 @@ use std::rc::Rc;
 
 use slint::ComponentHandle;
 
-use crate::card_render::{CardRenderer, PageFormat, RendererConfig};
+use crate::card_render::{CardRenderer, ImageCacheSize, PageFormat, RendererConfig};
 use crate::config::Config;
 use crate::fonts::{card_font_families, card_font_files};
 use crate::session::{LearnSession, media_folder};
@@ -88,6 +88,10 @@ fn spawn_card_renderer(
             font_files: card_font_files(&session.font_catalog),
             font_families: card_font_families(&session.font_catalog),
             media_folder: media_folder(config),
+            image_cache: ImageCacheSize::from_mb(
+                config.general.image_cache_mb,
+                config.general.image_cache_max_image_mb,
+            ),
         },
         Box::new(move |page| {
             let _ = ui_weak.upgrade_in_event_loop(move |ui| card_pages::deliver(&ui, page));

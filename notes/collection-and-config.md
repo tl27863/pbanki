@@ -22,8 +22,10 @@
   - `card_fallback_fonts`: `Adobe Ming Std`, `Adobe Heiti Std`, `Noto Sans CJK JP`.
   - `font_dirs`: the PB710 runtime paths, the USB paths, and the PB700 paths.
 - `[general] system_panel` is true by default (see `inkview-backend.md`).
+- `[general] card_shadows` is false by default: all `box-shadow` is removed from cards, because a blurred shadow costs about 170 ms per page on the PB710 (`blitz-card-render.md`, "Card HTML"). True draws them. Config file only, not in the settings UI; read when the study screen is wired (restart after a change). A config that got `card_shadows = true` from the build of 2026-11-05 keeps it.
+- `[general] image_cache_mb` (default 32) and `image_cache_max_image_mb` (default 16): the decoded image cache of the card renderer, all images and one image, in MB of RGBA. 0 turns it off. Config file only; read when the render thread starts.
 - `[ankiweb].endpoint` is blank for AnkiWeb. `sync_media` is true by default.
-- `load_or_create` adds missing font keys and `system_panel` to an existing config and saves it. The generated template contains all keys.
+- `load_or_create` adds missing font keys, `system_panel`, `card_shadows` and the image cache keys to an existing config and saves it. New keys get their comment from the template (`set_with_comment`). The generated template contains all keys.
 
 ## Settings UI
 

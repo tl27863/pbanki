@@ -35,7 +35,8 @@ Rating:
 
 ## Card pages
 
-- The job also renders the card (notes/blitz-card-render.md). `next_card` sends both sides to the card-render thread (`CardRenderer::render`) and waits for question page 1 and the answer start page. This adds about 100–200 ms to the job; `busy` covers it.
+- The job also renders the card (notes/blitz-card-render.md). `next_card` sends both sides to the card-render thread (`CardRenderer::start_render`) and waits for question page 1 and the answer start page. This adds about 100–200 ms to the job; `busy` covers it.
+- While it waits, the job builds the documents of the next two cards in the queue and sends them as lookahead. The render thread renders them while the user reads. When the next job asks for one of them, the pages are ready, and the job is the Anki part only. A wrong prediction (a learning card came due, an edit, another deck) costs nothing extra: the card renders as before. `blitz-card-render.md`, "The card-render thread".
 - The card area size comes from `MainWindow.card-area-width/height` times the window scale factor (`frontend/study.rs`, `render_context`). The study rows have fixed heights (`Constants.study_menu_height`, `study_buttons_height`), so the area is known before `LearnScreen` exists.
 - `finish_job` installs the pages in `frontend/card_pages.rs`, then `show_new_card` resets `show-answer` and `study-page` and sets the card. Do not call `set_current_card` directly (lint rule `pbanki-show-new-card`): a `changed card` handler in Slint runs after the first frame of the card, which then showed the old page state.
 - Later pages arrive from the render thread through `upgrade_in_event_loop`. If the page is the one waiting to show, `card_pages::deliver` changes `page-version` and calls `request_redraw()`, as for job results.
