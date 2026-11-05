@@ -20,6 +20,7 @@ fn render_context(
     ui: &MainWindow,
     session: &LearnSession,
     renderer: &CardRenderer,
+    shadows: bool,
 ) -> RenderContext {
     let scale = ui.window().scale_factor();
     // Round down, so the page never is larger than the area.
@@ -32,6 +33,7 @@ fn render_context(
             height: device(ui.get_card_area_height()),
             scale,
         },
+        shadows,
     }
 }
 
@@ -42,6 +44,8 @@ pub(super) fn wire(
     hooks: &FrontendHooks,
     renderer: &CardRenderer,
 ) {
+    // Config file only (no settings UI), so it is read once.
+    let shadows = config.borrow().general.card_shadows;
     {
         let ui_weak = ui.as_weak();
         let session = session.clone();
@@ -111,7 +115,7 @@ pub(super) fn wire(
                 .unwrap_or(0);
             let deck_id = deck.id;
             let set_deck = session.current_deck_id.get() != Some(deck_id);
-            let render = render_context(&ui, &session, &renderer);
+            let render = render_context(&ui, &session, &renderer, shadows);
 
             spawn_card_job(
                 ui_weak.clone(),
@@ -144,7 +148,7 @@ pub(super) fn wire(
 
             let deck_id = deck.id;
             let set_deck = session.current_deck_id.get() != Some(deck_id);
-            let render = render_context(&ui, &session, &renderer);
+            let render = render_context(&ui, &session, &renderer, shadows);
             tracing::info!("[deck {deck_id}] entering, set_deck={set_deck}");
 
             spawn_card_job(

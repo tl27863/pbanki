@@ -33,8 +33,9 @@ anyrender = "0.14.0"
 anyrender_vello_cpu = "0.18.0"
 parley = { version = "0.12", default-features = false, features = ["std"] }
 peniko = "0.6.0"
-# blitz-dom decodes <img> with `image` but enables no formats itself.
-image = { version = "0.25.6", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+# blitz-dom decodes <img> with `image` but enables no formats itself. `pnm`
+# is for the image cache: decoded images reach Blitz as PAM (card_render/image_cache.rs).
+image = { version = "0.25.6", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "pnm"] }
 # Logging. anki already depends on both (same versions and features), so they
 # add no crates. pbanki_core::logging installs the subscriber.
 tracing = "0.1.41"
@@ -53,3 +54,11 @@ incremental = false
 [profile.release.package."*"]
 opt-level = 3
 overflow-checks = false
+
+# Host measurements (crates/core/examples/render_deck.rs): optimized like the
+# release, but without fat LTO, so it builds in a fraction of the time.
+[profile.host-bench]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true

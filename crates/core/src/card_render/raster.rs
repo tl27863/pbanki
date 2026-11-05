@@ -2,7 +2,9 @@
 
 use std::fs::File;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use anyrender::{ImageRenderer as _, PaintScene as _};
 use anyrender_vello_cpu::VelloCpuImageRenderer;
@@ -15,6 +17,7 @@ use parley::fontique::{
 use peniko::kurbo::{Affine, Rect};
 use peniko::{Color, Fill};
 
+use super::image_cache::{ImageCache, ImageCacheSize, ImageKey, decode_to_pam};
 use super::{PageBuf, PageFormat};
 
 /// Scripts whose fallback chain is the card fonts. Without a fallback, text in
@@ -138,12 +141,65 @@ impl CardFonts {
 ///
 /// It answers synchronously: the bytes are in the document's queue when
 /// `fetch` returns, and `BaseDocument::handle_messages` loads them. Only
-/// relative paths inside the media folder are read.
+/// relative paths inside the media folder are read. Images are decoded once
+/// and kept in an `ImageCache` (see `image_cache.rs`).
 pub struct MediaProvider {
     pub folder: PathBuf,
+    images: Mutex<ImageCache>,
+    stats: MediaCounters,
+}
+
+/// Time spent in `MediaProvider::fetch` since the last `take_stats`.
+#[derive(Default)]
+struct MediaCounters {
+    files: AtomicU32,
+    cached: AtomicU32,
+    read_us: AtomicU64,
+    decode_us: AtomicU64,
+}
+
+/// Media work for one document (`MediaProvider::take_stats`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct MediaStats {
+    pub files: u32,
+    /// Images that came from the image cache (no file read, no full decode).
+    pub cached: u32,
+    /// Reading the files.
+    pub read: Duration,
+    /// Decoding the images that missed the cache, and `NetHandler::bytes`
+    /// (Blitz decodes images inside it, `ImageHandler`).
+    pub decode: Duration,
+}
+
+impl MediaStats {
+    pub fn add(&mut self, other: MediaStats) {
+        self.files += other.files;
+        self.cached += other.cached;
+        self.read += other.read;
+        self.decode += other.decode;
+    }
 }
 
 impl MediaProvider {
+    pub fn new(folder: PathBuf, image_cache: ImageCacheSize) -> Self {
+        Self {
+            folder,
+            images: Mutex::new(ImageCache::new(image_cache)),
+            stats: MediaCounters::default(),
+        }
+    }
+
+    /// The media work since the last call. The render thread calls it after
+    /// each document, so the numbers belong to that document.
+    pub fn take_stats(&self) -> MediaStats {
+        MediaStats {
+            files: self.stats.files.swap(0, Ordering::Relaxed),
+            cached: self.stats.cached.swap(0, Ordering::Relaxed),
+            read: Duration::from_micros(self.stats.read_us.swap(0, Ordering::Relaxed)),
+            decode: Duration::from_micros(self.stats.decode_us.swap(0, Ordering::Relaxed)),
+        }
+    }
+
     fn resolve(&self, request: &Request) -> Result<PathBuf, String> {
         if request.url.scheme() != "file" {
             return Err(format!("not a media file: {}", request.url));
@@ -165,13 +221,66 @@ impl MediaProvider {
     }
 }
 
+impl MediaProvider {
+    fn images(&self) -> std::sync::MutexGuard<'_, ImageCache> {
+        self.images.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The bytes for Blitz: decoded images as PAM (from the cache or decoded
+    /// now), anything else as read. The flag is true for a cache hit.
+    fn load(&self, request: &Request) -> Result<(Bytes, bool), String> {
+        let micros = |since: Instant| since.elapsed().as_micros() as u64;
+        let started = Instant::now();
+        let path = self.resolve(request)?;
+        let meta = std::fs::metadata(&path).map_err(|err| format!("{}: {err}", path.display()))?;
+        let key = ImageKey {
+            path,
+            len: meta.len(),
+            modified: meta.modified().ok(),
+        };
+        if let Some(pam) = self.images().get(&key) {
+            self.stats
+                .read_us
+                .fetch_add(micros(started), Ordering::Relaxed);
+            return Ok((pam, true));
+        }
+        let bytes =
+            std::fs::read(&key.path).map_err(|err| format!("{}: {err}", key.path.display()))?;
+        self.stats
+            .read_us
+            .fetch_add(micros(started), Ordering::Relaxed);
+
+        let started = Instant::now();
+        let max_entry = self.images().max_entry();
+        let pam = decode_to_pam(&bytes, max_entry);
+        self.stats
+            .decode_us
+            .fetch_add(micros(started), Ordering::Relaxed);
+        Ok(match pam {
+            Some(pam) => {
+                self.images().insert(key, pam.clone());
+                (pam, false)
+            }
+            None => (Bytes::from(bytes), false),
+        })
+    }
+}
+
 impl NetProvider for MediaProvider {
     fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
         let url = request.url.to_string();
-        match self.resolve(&request).and_then(|path| {
-            std::fs::read(&path).map_err(|err| format!("{}: {err}", path.display()))
-        }) {
-            Ok(bytes) => handler.bytes(url, Bytes::from(bytes)),
+        match self.load(&request) {
+            Ok((bytes, cached)) => {
+                self.stats.files.fetch_add(1, Ordering::Relaxed);
+                if cached {
+                    self.stats.cached.fetch_add(1, Ordering::Relaxed);
+                }
+                let started = Instant::now();
+                handler.bytes(url, bytes);
+                self.stats
+                    .decode_us
+                    .fetch_add(started.elapsed().as_micros() as u64, Ordering::Relaxed);
+            }
             Err(err) => {
                 tracing::warn!("[card] media: {err}");
                 handler.error(url, err);
@@ -232,8 +341,10 @@ impl Raster {
         top: f32,
         keep: u32,
         format: PageFormat,
-    ) -> PageBuf {
+    ) -> (PageBuf, PageTimes) {
         let (w, h) = (self.width, self.height);
+        let started = Instant::now();
+        let mut record = Duration::ZERO;
         doc.set_viewport_scroll(blitz_dom::Point {
             x: 0.0,
             y: f64::from(top) / f64::from(scale),
@@ -241,6 +352,7 @@ impl Raster {
         self.renderer.reset();
         self.renderer.render(
             |scene| {
+                let started = Instant::now();
                 scene.fill(
                     Fill::NonZero,
                     Affine::IDENTITY,
@@ -249,14 +361,53 @@ impl Raster {
                     &Rect::new(0.0, 0.0, f64::from(w), f64::from(h)),
                 );
                 paint_scene(scene, doc, f64::from(scale), w, h, 0, 0);
+                record = started.elapsed();
             },
             &mut self.rgba,
         );
+        let raster = started.elapsed() - record;
+        let started = Instant::now();
         let keep = keep.min(h) as usize;
         let mut page = convert(&self.rgba, w, h, format);
         let row = w as usize * format.bytes_per_pixel();
         page.data[keep * row..].fill(255);
-        page
+        let times = PageTimes {
+            record,
+            raster,
+            convert: started.elapsed(),
+        };
+        (page, times)
+    }
+}
+
+/// Where the time of one page went.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PageTimes {
+    /// `paint_scene`: walking the document and recording draw commands.
+    pub record: Duration,
+    /// vello_cpu rasterization (blur of `box-shadow` is here).
+    pub raster: Duration,
+    /// RGBA to the page format, and the mask below the cut.
+    pub convert: Duration,
+}
+
+impl PageTimes {
+    pub fn total(&self) -> Duration {
+        self.record + self.raster + self.convert
+    }
+}
+
+impl std::fmt::Display for PageTimes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ms = super::Ms;
+        write!(
+            f,
+            "{} ms (record {}, raster {}, convert {})",
+            ms(self.total()),
+            ms(self.record),
+            ms(self.raster),
+            ms(self.convert)
+        )
     }
 }
 
@@ -318,6 +469,52 @@ mod tests {
     }
 
     #[test]
+    fn media_provider_decodes_an_image_once() {
+        use std::sync::mpsc;
+
+        struct Capture(mpsc::Sender<Bytes>);
+        impl NetHandler for Capture {
+            fn bytes(self: Box<Self>, _url: String, bytes: Bytes) {
+                let _ = self.0.send(bytes);
+            }
+        }
+
+        let folder =
+            std::env::temp_dir().join(format!("pbanki-image-cache-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let folder = absolute_media_folder(&folder);
+        image::RgbImage::from_pixel(8, 6, image::Rgb([10, 0, 0]))
+            .save(folder.join("poster.png"))
+            .unwrap();
+        let provider = MediaProvider::new(folder.clone(), ImageCacheSize::DEFAULT);
+        let url = blitz_traits::net::Url::from_file_path(folder.join("poster.png")).unwrap();
+        let (tx, rx) = mpsc::channel();
+        let fetch = || {
+            provider.fetch(0, Request::get(url.clone()), Box::new(Capture(tx.clone())));
+            rx.try_recv().expect("the provider answers synchronously")
+        };
+
+        // Question and answer document of one card: one decode.
+        let first = fetch();
+        let second = fetch();
+        assert!(first.starts_with(b"P7\n"));
+        assert_eq!(first, second);
+        let stats = provider.take_stats();
+        assert_eq!((stats.files, stats.cached), (2, 1));
+
+        // A file that sync replaced is decoded again.
+        std::thread::sleep(Duration::from_millis(20));
+        image::RgbImage::from_pixel(9, 6, image::Rgb([200, 0, 0]))
+            .save(folder.join("poster.png"))
+            .unwrap();
+        let third = fetch();
+        assert_ne!(third, first);
+        assert_eq!(provider.take_stats().cached, 0);
+
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
     fn relative_media_folders_get_a_file_base_url() {
         let folder = absolute_media_folder(Path::new("./pbanki/collection/collection.media"));
         assert!(folder.is_absolute());
@@ -328,10 +525,32 @@ mod tests {
     }
 
     #[test]
+    fn media_stats_count_files_and_reset() {
+        struct Sink;
+        impl NetHandler for Sink {
+            fn bytes(self: Box<Self>, _: String, _: Bytes) {}
+        }
+        let dir = std::env::temp_dir().join(format!("pbanki-media-stats-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.png"), b"x").unwrap();
+        let provider = MediaProvider::new(dir.clone(), ImageCacheSize::OFF);
+        let url = blitz_traits::net::Url::from_file_path(dir.join("a.png")).unwrap();
+        provider.fetch(0, Request::get(url.clone()), Box::new(Sink));
+        provider.fetch(0, Request::get(url), Box::new(Sink));
+        provider.fetch(
+            0,
+            Request::get(blitz_traits::net::Url::parse("file:///etc/passwd").unwrap()),
+            Box::new(Sink),
+        );
+        assert_eq!(provider.take_stats().files, 2);
+        assert_eq!(provider.take_stats(), MediaStats::default());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn media_provider_stays_in_the_folder() {
-        let provider = MediaProvider {
-            folder: PathBuf::from("/col/collection.media"),
-        };
+        let provider =
+            MediaProvider::new(PathBuf::from("/col/collection.media"), ImageCacheSize::OFF);
         let request = |url: &str| {
             blitz_traits::net::Request::get(blitz_traits::net::Url::parse(url).unwrap())
         };

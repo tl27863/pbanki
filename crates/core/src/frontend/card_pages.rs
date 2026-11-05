@@ -265,6 +265,7 @@ mod tests {
             answer_start: 0,
             question: page(),
             answer: page(),
+            from_lookahead: false,
         }
     }
 

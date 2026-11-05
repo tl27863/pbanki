@@ -210,6 +210,7 @@ fn finish_job(
     let card = match result {
         Ok(mut loaded) => {
             job.session.current_deck_id.set(Some(job.deck.id));
+            log_lookahead(job, &loaded);
             let content =
                 std::mem::replace(&mut loaded.content, CardContent::Message(String::new()));
             let (pages, message) = match content {
@@ -234,6 +235,7 @@ fn finish_job(
         }
         Err(err) => {
             tracing::error!("Failed to load card: {err}");
+            job.session.predicted_next.borrow_mut().clear();
             // The deck selection may not have completed; select it again on
             // the next entry.
             reset_session_memory(&job.session);
@@ -265,6 +267,34 @@ fn finish_job(
         job.id,
         delivery_timer.elapsed()
     );
+}
+
+/// Logs whether a rating led to a card that the queue had predicted when the
+/// previous card was loaded (`[card] lookahead`). This measures the hit rate
+/// of a render-ahead cache before it exists
+/// (notes/deep-research/card-page-cache.md). Deck entries only record the
+/// prediction: the previous card belonged to another session.
+fn log_lookahead(job: &PendingJob, loaded: &LoadedCard) {
+    let predicted = std::mem::replace(
+        &mut *job.session.predicted_next.borrow_mut(),
+        loaded.predicted_next.clone(),
+    );
+    if job.full_transition || loaded.id == -1 {
+        return;
+    }
+    match predicted.iter().position(|&id| id == loaded.id) {
+        Some(index) => tracing::info!(
+            "[card] lookahead hit pos={} card={} kind={}",
+            index + 1,
+            loaded.id,
+            loaded.queue_kind
+        ),
+        None => tracing::info!(
+            "[card] lookahead miss predicted={predicted:?} card={} kind={}",
+            loaded.id,
+            loaded.queue_kind
+        ),
+    }
 }
 
 /// Shows a new card at question page 1. The page state is reset before the

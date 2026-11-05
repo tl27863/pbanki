@@ -25,6 +25,9 @@ pub struct LearnSession {
     pub job_seq: Cell<u64>,
     /// True while a card is being loaded on a worker thread or a sync is running.
     pub busy: Cell<bool>,
+    /// `LoadedCard::predicted_next` of the shown card. The next rating logs
+    /// whether its card was predicted (`[card] lookahead`).
+    pub predicted_next: RefCell<Vec<i64>>,
     pub font_catalog: FontCatalog,
     pub sync_manager: Rc<SyncManager>,
 }
@@ -72,6 +75,7 @@ pub fn init_session(config: &Config) -> Rc<LearnSession> {
         current_deck_id: Cell::new(None),
         job_seq: Cell::new(0),
         busy: Cell::new(false),
+        predicted_next: RefCell::new(Vec::new()),
         font_catalog,
         sync_manager: Rc::new(SyncManager::new()),
     })
