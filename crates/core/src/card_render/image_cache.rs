@@ -37,10 +37,12 @@ impl ImageCacheSize {
     /// No cache: every document decodes its images, as before the cache.
     pub const OFF: Self = Self::from_mb(0, 0);
 
+    /// Saturates where `usize` is too small (32-bit ARM on the PocketBook:
+    /// 4096 MB and more), so a large value does not wrap to a small cache.
     pub const fn from_mb(total: u32, max_image: u32) -> Self {
         Self {
-            total: (total as usize) << 20,
-            max_image: (max_image as usize) << 20,
+            total: (total as usize).saturating_mul(1 << 20),
+            max_image: (max_image as usize).saturating_mul(1 << 20),
         }
     }
 }
@@ -122,6 +124,10 @@ impl ImageCache {
 /// cache does not keep would only add copies: about 280 ms for a 1600×2400
 /// JPEG on the PB710 (memory bandwidth is about 330 MB/s).
 pub fn decode_to_pam(bytes: &[u8], max_bytes: usize) -> Option<Bytes> {
+    // The cache is off: no image is kept, so do not even read the header.
+    if max_bytes == 0 {
+        return None;
+    }
     let reader = || {
         image::ImageReader::new(Cursor::new(bytes))
             .with_guessed_format()
@@ -155,6 +161,14 @@ mod tests {
     fn the_image_limit_is_at_most_the_total() {
         assert_eq!(ImageCache::new(bytes(10, 20)).max_entry(), 10);
         assert_eq!(ImageCacheSize::DEFAULT, bytes(32 << 20, 16 << 20));
+    }
+
+    #[test]
+    fn large_sizes_do_not_wrap() {
+        // 4096 MB is 1 << 32 bytes: 0 after a plain shift in a 32-bit usize.
+        let size = ImageCacheSize::from_mb(4096, u32::MAX);
+        assert_eq!(size.total as u64, (4096u64 << 20).min(usize::MAX as u64));
+        assert!(size.max_image >= size.total);
     }
 
     fn key(name: &str) -> ImageKey {

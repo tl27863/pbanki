@@ -128,3 +128,4 @@ scripts/pocketbook/*.log
 fusion-response*.md
 notes/deep-research/
 bench/
+logs/
