@@ -6,6 +6,8 @@
 mod auth;
 mod backup;
 mod client;
+#[cfg(test)]
+mod tests;
 
 use std::time::Instant;
 
@@ -50,7 +52,7 @@ impl SyncResult {
 
 pub fn sync_now(session: &LearnSession, config: &mut Config) -> SyncResult {
     let rt = Runtime::new().unwrap();
-    let auth = match auth::sync_auth(session, config, &rt) {
+    let mut auth = match auth::sync_auth(session, config, &rt) {
         Ok(auth) => auth,
         Err(message) => return SyncResult::error(message),
     };
@@ -71,6 +73,10 @@ pub fn sync_now(session: &LearnSession, config: &mut Config) -> SyncResult {
     if let Some(endpoint) = result.new_endpoint.take() {
         tracing::info!("[sync] server moved this account to {endpoint}");
         let normalized = normalize_endpoint(&endpoint).ok().flatten();
+        // Media sync below must use the new server too.
+        if let Ok(Some(url)) = parse_endpoint(Some(&endpoint)) {
+            auth.endpoint = Some(url);
+        }
         config.ankiweb.endpoint = Some(endpoint);
         if config.ankiweb.token.is_some() {
             config.ankiweb.token_endpoint = normalized;
