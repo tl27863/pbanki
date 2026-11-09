@@ -1,0 +1,35 @@
+// UI colors for the panel kind. The only file with color literals (lint rule
+// `pbanki-no-slint-color-literal`). Rust sets `color-panel` once at startup
+// from the card page format: false for a gray (`BB8`) panel, true for a color
+// (`RGB24`) panel and the desktop.
+//
+// Gray panels map colors through luma, so red, green, and blue become similar
+// dark grays. There, semantic colors are black (most contrast on e-ink) and
+// the label or position carries the meaning. Errors are bold instead of red.
+export global Theme {
+    in property <bool> color-panel: true;
+
+    // Deck counts: new, learning, due.
+    out property <color> count-new: color-panel ? #0000FF : #000000;
+    out property <color> count-learn: color-panel ? #FF0000 : #000000;
+    out property <color> count-due: color-panel ? #008000 : #000000;
+    out property <color> count-muted: #808080;
+
+    // Rating durations: again, hard, good, easy.
+    out property <color> rate-again: color-panel ? #FF0000 : #000000;
+    out property <color> rate-hard: #000000;
+    out property <color> rate-good: color-panel ? #008000 : #000000;
+    out property <color> rate-easy: color-panel ? #0000FF : #000000;
+
+    // Sync status and error messages.
+    out property <color> status-error: color-panel ? #CC0000 : #000000;
+    out property <color> status-warning: color-panel ? #B36B00 : #404040;
+    out property <color> status-normal: #606060;
+    out property <int> status-error-weight: color-panel ? 400 : 700;
+
+    // Text fields.
+    out property <color> text: #000000;
+    out property <color> text-muted: #808080;
+    out property <color> field-border: #808080;
+    out property <color> field-background: #FFFFFF;
+}

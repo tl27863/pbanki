@@ -1,8 +1,12 @@
+import { Theme } from "theme.slint";
 import { Constants, Translations } from "constants.slint";
 import { DeckNode, DeckTree, CardNode, EditField, SyncSettings, SyncState } from "types.slint";
 import { LearnScreen } from "screens/learn.slint";
 import { DeckSelectScreen } from "screens/deck_select.slint";
 import { SettingsScreen } from "screens/settings.slint";
+
+// Re-exported for Rust: `ui.global::<Theme>()`.
+export { Theme }
 
 export component MainWindow inherits Window {
     preferred-width: 500px;

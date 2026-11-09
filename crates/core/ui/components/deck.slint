@@ -1,3 +1,4 @@
+import { Theme } from "../theme.slint";
 import { Constants } from "../constants.slint";
 import { DeckNode } from "../types.slint";
 
@@ -44,7 +45,7 @@ export component Deck {
                     Text {
                         text: deck.new;
                         font-family: Constants.font_family_standard;
-                        color: #808080;
+                        color: Theme.count-muted;
                         font-size: Constants.font_size_subcontent;
                         vertical-alignment: center;
                     }
@@ -52,7 +53,7 @@ export component Deck {
                     Text {
                         text: deck.learn;
                         font-family: Constants.font_family_standard;
-                        color: #808080;
+                        color: Theme.count-muted;
                         font-size: Constants.font_size_subcontent;
                         vertical-alignment: center;
                     }
@@ -60,7 +61,7 @@ export component Deck {
                     Text {
                         text: deck.due;
                         font-family: Constants.font_family_standard;
-                        color: #008000;
+                        color: Theme.count-due;
                         font-size: Constants.font_size_subcontent;
                         vertical-alignment: center;
                     }

@@ -1,3 +1,4 @@
+import { Theme } from "../theme.slint";
 import { ListView } from "std-widgets.slint";
 import { Deck } from "../components/deck.slint";
 import { Constants, Translations } from "../constants.slint";
@@ -31,7 +32,8 @@ component Menu {
                 text: sync_state.status_message;
                 font-family: Constants.font_family_standard;
                 font-size: Constants.font_size_subcontent;
-                color: sync_state.has_error ? #CC0000 : (sync_state.has_warning ? #B36B00 : #606060);
+                color: sync_state.has_error ? Theme.status-error : (sync_state.has_warning ? Theme.status-warning : Theme.status-normal);
+                font-weight: sync_state.has_error ? Theme.status-error-weight : 400;
                 wrap: TextWrap.word-wrap;
             }
         }

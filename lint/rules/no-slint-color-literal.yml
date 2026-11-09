@@ -1,0 +1,12 @@
+id: pbanki-no-slint-color-literal
+language: slint
+severity: error
+message: Use a `Theme` color, not a color literal.
+note: |
+  Gray (BB8) panels map colors through luma, so red, green, and blue become
+  similar dark grays. `ui/theme.slint` picks each color for the panel kind
+  (`Theme.color-panel`, set from the card page format). Add a token there.
+ignores:
+  - crates/core/ui/theme.slint
+rule:
+  kind: color_value
