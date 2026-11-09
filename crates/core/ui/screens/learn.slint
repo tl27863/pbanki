@@ -1,3 +1,4 @@
+import { Theme } from "../theme.slint";
 import { Constants, Translations } from "../constants.slint";
 import { DeckNode, CardNode } from "../types.slint";
 import { ListView, ScrollView } from "std-widgets.slint";
@@ -32,7 +33,7 @@ component Menu {
             Text {
                 text: card.deck.new;
                 font-family: Constants.font_family_standard;
-                color: #0000FF;
+                color: Theme.count-new;
                 font-size: Constants.font_size_subcontent;
                 vertical-alignment: center;
             }
@@ -40,7 +41,7 @@ component Menu {
             Text {
                 text: card.deck.learn;
                 font-family: Constants.font_family_standard;
-                color: #FF0000;
+                color: Theme.count-learn;
                 font-size: Constants.font_size_subcontent;
                 vertical-alignment: center;
             }
@@ -48,7 +49,7 @@ component Menu {
             Text {
                 text: card.deck.due;
                 font-family: Constants.font_family_standard;
-                color: #008000;
+                color: Theme.count-due;
                 font-size: Constants.font_size_subcontent;
                 vertical-alignment: center;
             }
@@ -236,7 +237,7 @@ export component LearnScreen {
                         for rating in 4: RatingButton {
                             duration: card.durations[rating];
                             label: rating == 0 ? tr.again : rating == 1 ? tr.hard : rating == 2 ? tr.good : tr.easy;
-                            color: rating == 0 ? #FF0000 : rating == 2 ? #008000 : rating == 3 ? #0000FF : #000000;
+                            color: rating == 0 ? Theme.rate-again : rating == 1 ? Theme.rate-hard : rating == 2 ? Theme.rate-good : Theme.rate-easy;
                             enabled: !busy;
 
                             clicked => {

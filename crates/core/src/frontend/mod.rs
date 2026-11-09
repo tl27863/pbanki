@@ -19,7 +19,7 @@ use crate::card_render::{CardRenderer, ImageCacheSize, PageFormat, RendererConfi
 use crate::config::Config;
 use crate::fonts::{card_font_families, card_font_files};
 use crate::session::{LearnSession, media_folder};
-use crate::{MainWindow, SyncState};
+use crate::{MainWindow, SyncState, Theme};
 use models::{deck_tree, translations};
 use settings::sync_settings_from_config;
 
@@ -64,6 +64,9 @@ pub fn wire_callbacks(
     config: Rc<RefCell<Config>>,
     hooks: FrontendHooks,
 ) {
+    // UI colors follow the panel kind, as the card pages do (`ui/theme.slint`).
+    ui.global::<Theme>()
+        .set_color_panel(hooks.page_format == PageFormat::Rgb8);
     let renderer = spawn_card_renderer(ui, &session, &config.borrow(), hooks.page_format);
     card_pages::set_renderer(renderer.clone());
     ui.on_page_image(|answer, page, _version| card_pages::page_image(answer, page));

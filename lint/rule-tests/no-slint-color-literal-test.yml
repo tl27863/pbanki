@@ -1,0 +1,23 @@
+id: pbanki-no-slint-color-literal
+valid:
+  - |
+    component A {
+        Text { color: Theme.count-due; }
+    }
+  - |
+    component A {
+        Rectangle { background: Theme.field-background; }
+    }
+invalid:
+  - |
+    component A {
+        Text { color: #FF0000; }
+    }
+  - |
+    component A {
+        Text { color: x ? #CC0000 : Theme.status-normal; }
+    }
+  - |
+    component A {
+        Rectangle { border-color: #808080; }
+    }

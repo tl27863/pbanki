@@ -1,3 +1,4 @@
+import { Theme } from "../theme.slint";
 import { Button, CheckBox, LineEdit, ScrollView } from "std-widgets.slint";
 import { Constants, Translations } from "../constants.slint";
 import { EditField, SyncSettings, SyncState } from "../types.slint";
@@ -27,9 +28,9 @@ component SettingsField {
             width: 100%;
             height: 40px;
             border-width: 1px;
-            border-color: #808080;
+            border-color: Theme.field-border;
             border-radius: 2px;
-            background: #FFFFFF;
+            background: Theme.field-background;
 
             HorizontalLayout {
                 padding-left: 8px;
@@ -40,7 +41,7 @@ component SettingsField {
                     font-size: Constants.font_size_content;
                     vertical-alignment: center;
                     overflow: TextOverflow.elide;
-                    color: root.value == "" ? #808080 : #000000;
+                    color: root.value == "" ? Theme.text-muted : Theme.text;
                 }
             }
 
@@ -114,7 +115,8 @@ export component SettingsScreen {
             text: sync_state.status_message;
             font-family: Constants.font_family_standard;
             font-size: Constants.font_size_subcontent;
-            color: sync_state.has_error ? #CC0000 : (sync_state.has_warning ? #B36B00 : #606060);
+            color: sync_state.has_error ? Theme.status-error : (sync_state.has_warning ? Theme.status-warning : Theme.status-normal);
+            font-weight: sync_state.has_error ? Theme.status-error-weight : 400;
             wrap: TextWrap.word-wrap;
         }
 
@@ -249,7 +251,8 @@ export component SettingsScreen {
                         text: tr.full_sync_required;
                         font-family: Constants.font_family_standard;
                         font-size: Constants.font_size_content;
-                        color: #CC0000;
+                        color: Theme.status-error;
+                        font-weight: Theme.status-error-weight;
                         wrap: TextWrap.word-wrap;
                     }
 

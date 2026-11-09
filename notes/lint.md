@@ -23,6 +23,7 @@ The rules check invariants that clippy cannot check.
 | `pbanki-checkbox-font-size` | Slint | Each CheckBox sets `font-size` |
 | `pbanki-no-focus-in-init` | Slint | No `focus()` in `init` |
 | `pbanki-study-controls-no-states` | Slint | No `states`, `transitions`, `animate`, `.pressed`, or `.has-hover` in `plain_button.slint` and `rating_button.slint` |
+| `pbanki-no-slint-color-literal` | Slint | No color literals outside `ui/theme.slint`. Use a `Theme` token |
 
 ## Run
 
