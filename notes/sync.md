@@ -69,6 +69,20 @@ Each sync logs these lines (see `logging.md`):
 - `[wifi]` lines show if the network was already connected, the radio state and raw `QueryNetwork` flags, if pbAnki connected it (time and status), and if pbAnki disconnected it or powered the radio off after the sync. They do not show network names (SSIDs).
 - anki logs its sync steps at `debug`. To see them, set `PBANKI_LOG=info,anki=debug`.
 
+## Tests
+
+`crates/core/src/sync/tests.rs` runs `sync_now` and `full_sync` against anki's `SimpleServer` (the code of `anki-sync-server`). The tests start it in-process on a free port, one server per test. They need no Docker. The layout follows anki's `rslib/src/sync/collection/tests.rs`.
+
+- Covered: login and the saved token, a wrong password, a token for another endpoint, full upload and download (with the backup), normal sync both ways, media, and the `308` endpoint move (a small redirector thread).
+- Tests are plain `#[test]`: `sync_now` makes its own runtime. The server runs on its own thread.
+- Each test config sets `Config.path` to a temp dir. The default path is the device path.
+- `dev_server_roundtrip` (ignored) runs against the dev sync server. It checks anki `main` against the pinned server image. It **replaces the account's collection** on that server:
+
+  ```sh
+  make -C ../pbanki-sync-server up
+  PBANKI_SYNC_TEST_ENDPOINT=http://127.0.0.1:27701/ cargo test -p pbanki-core dev_server_roundtrip -- --ignored
+  ```
+
 ## Dev sync server
 
 - It is an external Docker Compose project at `../pbanki-sync-server` (not in this repository).

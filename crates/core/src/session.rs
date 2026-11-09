@@ -54,7 +54,12 @@ pub fn init_session(config: &Config) -> Rc<LearnSession> {
         }
     };
 
-    if let Err(e) = col.upgrade_scheduler() {
+    // `upgrade_scheduler` marks the collection modified even when it has
+    // nothing to do. Then every start leaves a change to sync, and a new empty
+    // collection asks for a full sync (anki issue #5109).
+    if !col.v2_enabled()
+        && let Err(e) = col.upgrade_scheduler()
+    {
         tracing::warn!("Failed to upgrade scheduler: {:?}", e);
     }
 
