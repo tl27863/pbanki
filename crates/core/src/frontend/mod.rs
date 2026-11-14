@@ -1,12 +1,14 @@
 //! Slint callback wiring shared by both frontends.
 //!
-//! Platform differences come in through `FrontendHooks`. Card loads run on a
-//! worker thread (`card_jobs`); sync still blocks the UI thread (`sync`).
+//! Platform differences come in through `FrontendHooks`. Card loads and syncs
+//! run on a worker thread that owns the collection (`card_jobs`).
 
 mod card_jobs;
 mod card_pages;
+mod decks;
 mod models;
 mod settings;
+mod stats;
 mod study;
 mod sync;
 
@@ -20,8 +22,8 @@ use crate::config::Config;
 use crate::fonts::{card_font_families, card_font_files};
 use crate::session::{LearnSession, media_folder};
 use crate::{MainWindow, SyncState, Theme};
-use models::{deck_tree, translations};
-use settings::sync_settings_from_config;
+use models::translations;
+use settings::{device_settings_from_config, key_hints_from_config, sync_settings_from_config};
 
 pub use sync::{SyncHooks, maybe_auto_sync};
 
@@ -35,6 +37,13 @@ pub struct FrontendHooks {
     /// and its first result, Home, Settings open/back). Desktop leaves this
     /// unset, making transition requests a plain redraw.
     pub full_present: Option<Rc<dyn Fn()>>,
+    /// Requests that the next rendered frame is presented as one flashing
+    /// full refresh, which clears ghosting.
+    ///
+    /// Called on the UI thread with the present of a card, every
+    /// `full_refresh_every` rated cards (Settings > Device). Desktop leaves
+    /// this unset.
+    pub full_refresh: Option<Rc<dyn Fn()>>,
     /// Pixel format of the card pages: `Gray8` for a gray panel (`BB8`
     /// framebuffer), `Rgb8` (the default) for a color panel and the desktop.
     pub page_format: PageFormat,
@@ -47,6 +56,13 @@ impl FrontendHooks {
             hook();
         }
     }
+
+    fn request_full_refresh(&self, ui: &MainWindow) {
+        ui.window().request_redraw();
+        if let Some(hook) = &self.full_refresh {
+            hook();
+        }
+    }
 }
 
 pub fn init_ui(ui: &MainWindow, session: &LearnSession, config: &Config, native_keyboard: bool) {
@@ -54,8 +70,10 @@ pub fn init_ui(ui: &MainWindow, session: &LearnSession, config: &Config, native_
     ui.set_busy(false);
     ui.set_tr(translations(session));
     ui.set_sync_settings(sync_settings_from_config(config));
+    ui.set_device_settings(device_settings_from_config(config));
+    ui.set_key_hints(key_hints_from_config(config));
     ui.set_sync_state(SyncState::default());
-    ui.set_deck_tree(deck_tree(session));
+    decks::reload(ui, session);
 }
 
 pub fn wire_callbacks(
@@ -71,6 +89,8 @@ pub fn wire_callbacks(
     card_pages::set_renderer(renderer.clone());
     ui.on_page_image(|answer, page, _version| card_pages::page_image(answer, page));
 
+    decks::wire(ui, &session);
+    stats::wire(ui, &session, &hooks);
     settings::wire(ui, &session, &config, &hooks);
     sync::wire(ui, &session, &config, &hooks);
     study::wire(ui, &session, &config, &hooks, &renderer);

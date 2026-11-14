@@ -9,6 +9,15 @@
 export global Theme {
     in property <bool> color-panel: true;
 
+    // Base tokens of the black-and-white design. `line` is the hairline.
+    out property <color> ink: #000000;
+    out property <color> paper: #FFFFFF;
+    out property <color> muted: #808080;
+    out property <color> line: #000000;
+    // Segments of the stacked card-count bar (30 % and 60 % ink).
+    out property <color> tone-30: #B3B3B3;
+    out property <color> tone-60: #666666;
+
     // Deck counts: new, learning, due.
     out property <color> count-new: color-panel ? #0000FF : #000000;
     out property <color> count-learn: color-panel ? #FF0000 : #000000;

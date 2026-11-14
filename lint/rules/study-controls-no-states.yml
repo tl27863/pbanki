@@ -4,11 +4,13 @@ severity: error
 message: Study controls must not have pressed, hover, state, or animated styles.
 note: |
   Each extra panel update from a pressed/hover/animated style delays the next
-  full-screen update by 0.5-0.8 s on the PB710. Show Answer (PlainButton) and
-  RatingButton stay static.
+  full-screen update by 0.5-0.8 s on the PB710. Show Answer (PlainButton),
+  RatingButton, IconButton, and KeyGlyph stay static.
 files:
   - crates/core/ui/components/plain_button.slint
   - crates/core/ui/components/rating_button.slint
+  - crates/core/ui/components/icon_button.slint
+  - crates/core/ui/components/key_glyph.slint
 rule:
   any:
     - kind: states_definition

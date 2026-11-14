@@ -9,7 +9,8 @@ Content updates are the answer reveal, rating to the next card, and page turns. 
 - Panel idle: `PartialUpdate` of the damage bounding box.
 - Panel busy: `DynamicUpdate` for the accumulated damage, up to 100k px. Larger damage waits for the finalizer.
 - Finalizer: when the panel is idle again, it sends one `PartialUpdate` of the union of the waiting damage.
-- Fallback: if the panel stays busy for about 2 s, the finalizer sends `FullUpdate` (flashing). There is no periodic full refresh.
+- Fallback: if the panel stays busy for about 2 s, the finalizer sends `FullUpdate` (flashing).
+- Periodic full refresh: off by default. See "Periodic full refresh" below.
 
 Content updates do not blit the full frame again and do not call `WaitForUpdateComplete`.
 
@@ -27,9 +28,20 @@ The `Presenter` state machine (`Idle | Pending | Verifying`) owns them:
 
 The app requests presents through `FrontendHooks.full_present`. `crates/pocketbook/src/main.rs` sets it, and the eink-sim frontend sets it. The winit desktop frontend does not. The app requests a present for:
 
-- Deck entry: the loading screen (if shown) and the first card. `PendingJob.full_transition` tells deck entry from rating jobs.
+- Deck entry: the loading screen (if shown) and the first card. `CardJob.full_transition` tells deck entry from rating jobs.
 - Home.
 - Settings open and back, also when Settings opens automatically.
+- Stats: the loader (if shown), the result, and back.
+
+## Periodic full refresh
+
+`full_refresh_every` (Settings > Device; 0, 1, 5, or 10 cards; default 0) clears ghosting with one flashing update.
+
+- App: `LearnSession.rated_since_refresh` counts rated cards in `finish_job` (`full_refresh_due` in `frontend/card_jobs.rs`). At the limit, the present of the next card calls `FrontendHooks.full_refresh` in place of the plain redraw, and the count starts again. A deck entry is a full present already, so it also starts the count again.
+- Fork: `inkview_slint::request_full_refresh()` is a second latch beside `request_full_present()`. The backend reads it after event dispatch and before rendering. The `Presenter` then holds the damage of that frame and sends one full-screen update with the `fallback` mode (`full`) in its place. No verification present follows a refresh: a second update 300 ms later would fight the flashing update.
+- A refresh request that meets a pending full present only changes the mode of that present. The present keeps its reason and its verification. A refresh replaces a waiting verification.
+- Log: `request reason=Refresh`, then `issued reason=Refresh flash=true …`.
+- `crates/pocketbook/src/main.rs` and the eink-sim frontend set the hook. The winit desktop frontend does not. In eink-sim, `full_refresh_every = 1` gives the flashing refresh after each card. Not checked on the PB710 yet.
 
 ## Why the design is like this
 
@@ -39,7 +51,7 @@ Each item below was a regression on the device.
 - Slint marks the whole window (1264×1680) dirty for answer and next-card changes. Thus damage area cannot tell a screen change from a content change. Area thresholds made every rating a full present (1–1.5 s lag). Keep transitions explicit.
 - `WaitForUpdateComplete` on content updates blocked the UI thread for 3–4 s per Show Answer.
 - Count the verification delay from the time the present is sent, not from the request time. A long first render otherwise skipped the verification.
-- Each pressed, hover, or animated style on a study control is one more panel update. It delays the next full-screen update by 0.5–0.8 s. Show Answer (`PlainButton`) and `RatingButton` have no pressed, hover, or animated styles. Keep it that way. The lint rule `pbanki-study-controls-no-states` checks this.
+- Each pressed, hover, or animated style on a study control is one more panel update. It delays the next full-screen update by 0.5–0.8 s. Show Answer (`PlainButton`), `RatingButton`, `IconButton` and `KeyGlyph` have no pressed, hover, or animated styles. Keep it that way. The lint rule `pbanki-study-controls-no-states` checks this.
 
 ## Update policy
 
@@ -80,6 +92,13 @@ Recommended device tests:
 The probe shows a floor of about 440 ms for most modes. Thus faster waveforms give little latency gain on the PB710. Ghosting and quality need a visual check.
 
 Not available on purpose: `device_epdc_init()->update`. It goes around InkView.
+
+## Activity icons
+
+- `components/activity_icon.slint` steps through SVG frames with a Slint `Timer` at 500 ms (sync 2 frames, network 4, loading 3; done and error are static). There is no fade or tween. The timer runs only while the icon is visible and animated.
+- Each step is a 24×24 px damage update on the normal content path. `components/loader.slint` does the same with four squares.
+- The lint rule `pbanki-no-repeated-timer` covers Rust timers only. Repeating timers for these animations are Slint `Timer` elements with `running:` bound to visibility.
+- Not measured on the PB710: ghosting of the loops, and the cost of the loading icon on the time to the next card. If either is bad, set `animated: false` (one static frame).
 
 ## Known minor issues
 

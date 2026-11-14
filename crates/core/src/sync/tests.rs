@@ -88,7 +88,9 @@ fn start_redirector(location: String) -> String {
             let mut request = Vec::new();
             let mut buf = [0u8; 4096];
             let body_start = loop {
-                let Ok(n) = stream.read(&mut buf) else { break None };
+                let Ok(n) = stream.read(&mut buf) else {
+                    break None;
+                };
                 if n == 0 {
                     break None;
                 }
@@ -97,7 +99,9 @@ fn start_redirector(location: String) -> String {
                     break Some(pos + 4);
                 }
             };
-            let Some(body_start) = body_start else { continue };
+            let Some(body_start) = body_start else {
+                continue;
+            };
             let headers = String::from_utf8_lossy(&request[..body_start]).to_lowercase();
             let length: usize = headers
                 .lines()
@@ -154,11 +158,24 @@ impl Device {
     }
 
     fn sync(&mut self) -> SyncResult {
-        sync_now(&self.session, &mut self.config)
+        let outcome = sync_now(
+            &mut self.session.collection.borrow_mut(),
+            &self.config,
+            &self.session.sync_manager,
+        );
+        outcome.apply_config(&mut self.config);
+        outcome.result
     }
 
     fn full_sync(&mut self, upload: bool) -> SyncResult {
-        full_sync(&self.session, &mut self.config, upload)
+        let outcome = full_sync(
+            &mut self.session.collection.borrow_mut(),
+            &self.config,
+            &self.session.sync_manager,
+            upload,
+        );
+        outcome.apply_config(&mut self.config);
+        outcome.result
     }
 
     fn add_note(&self, text: &str) {
@@ -261,7 +278,11 @@ fn wrong_password_is_reported() {
     let result = device.sync();
 
     assert!(!result.success);
-    assert!(result.message.starts_with("Login failed"), "{}", result.message);
+    assert!(
+        result.message.starts_with("Login failed"),
+        "{}",
+        result.message
+    );
     assert_eq!(device.config.ankiweb.token, None);
 }
 
@@ -309,11 +330,17 @@ fn normal_sync_merges_both_ways() {
     a.add_note("2");
     let result = a.sync();
     assert_ok(&result);
-    assert!(!matches!(result.action, SyncAction::FullSyncRequired { .. }));
+    assert!(!matches!(
+        result.action,
+        SyncAction::FullSyncRequired { .. }
+    ));
 
     let result = b.sync();
     assert_ok(&result);
-    assert!(!matches!(result.action, SyncAction::FullSyncRequired { .. }));
+    assert!(!matches!(
+        result.action,
+        SyncAction::FullSyncRequired { .. }
+    ));
     assert_eq!(b.note_count(), 2);
 
     b.add_note("3");
@@ -352,7 +379,10 @@ fn endpoint_redirect_is_saved() {
     let result = a.sync();
 
     assert_ok(&result);
-    assert_eq!(a.config.ankiweb.endpoint.as_deref(), Some(endpoint.as_str()));
+    assert_eq!(
+        a.config.ankiweb.endpoint.as_deref(),
+        Some(endpoint.as_str())
+    );
     assert_eq!(
         a.config.ankiweb.token_endpoint,
         normalize_endpoint(&endpoint).unwrap()

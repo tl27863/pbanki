@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::card_render::ImageCacheSize;
+use crate::keys::{KeyAction, KeyConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
 use toml_edit::{Array, DocumentMut, Item, Table, Value, value};
@@ -41,6 +42,71 @@ pub struct GeneralConfig {
     /// The largest single image the cache keeps (MB of RGBA). Config file only.
     #[serde(default = "default_image_cache_max_image_mb")]
     pub image_cache_max_image_mb: u32,
+    /// Flashing full refresh after this many rated cards: 0 (never), 1, 5,
+    /// or 10. Other values go to the nearest of these. Settings > Device.
+    #[serde(default, deserialize_with = "deserialize_full_refresh_every")]
+    pub full_refresh_every: u32,
+    /// What the Prev and Next keys do on each card side (`keys.rs`).
+    /// Settings > Device.
+    #[serde(default = "default_key_prev_question")]
+    pub key_prev_question: KeyAction,
+    #[serde(default = "default_key_next_question")]
+    pub key_next_question: KeyAction,
+    #[serde(default = "default_key_prev_answer")]
+    pub key_prev_answer: KeyAction,
+    #[serde(default = "default_key_next_answer")]
+    pub key_next_answer: KeyAction,
+}
+
+impl GeneralConfig {
+    pub fn key_config(&self) -> KeyConfig {
+        KeyConfig {
+            prev_question: self.key_prev_question,
+            next_question: self.key_next_question,
+            prev_answer: self.key_prev_answer,
+            next_answer: self.key_next_answer,
+        }
+    }
+}
+
+/// Comment written above `full_refresh_every` when the key is added.
+const FULL_REFRESH_COMMENT: &str = "\n# Flashing full refresh of the screen after this many rated cards, to clear\n# ghosting: 0 (never), 1, 5, or 10. Also in Settings > Device.\n";
+
+/// Comment written above `key_prev_question` when the key is added.
+const KEYS_COMMENT: &str = "\n# What the Prev and Next hardware keys do on the question and on the answer\n# side: \"nothing\", \"showanswer\", \"again\", \"hard\", \"good\", or \"easy\".\n# \"showanswer\" works on the question side only, and a rating on the answer\n# side only. On a card with more than one page, the keys turn the page first.\n# Also in Settings > Device.\n";
+
+/// The values that `full_refresh_every` can have.
+pub const FULL_REFRESH_CHOICES: [u32; 4] = [0, 1, 5, 10];
+
+/// The nearest of `FULL_REFRESH_CHOICES`. A tie goes to the smaller value.
+pub fn clamp_full_refresh_every(value: i64) -> u32 {
+    FULL_REFRESH_CHOICES
+        .into_iter()
+        .min_by_key(|&choice| (i64::from(choice) - value).abs())
+        .unwrap_or(0)
+}
+
+fn deserialize_full_refresh_every<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    i64::deserialize(deserializer).map(clamp_full_refresh_every)
+}
+
+fn default_key_prev_question() -> KeyAction {
+    KeyConfig::default().prev_question
+}
+
+fn default_key_next_question() -> KeyAction {
+    KeyConfig::default().next_question
+}
+
+fn default_key_prev_answer() -> KeyAction {
+    KeyConfig::default().prev_answer
+}
+
+fn default_key_next_answer() -> KeyAction {
+    KeyConfig::default().next_answer
 }
 
 /// Comment written above `system_panel` in the template and when the key is
@@ -143,6 +209,11 @@ impl Default for Config {
                 card_shadows: false,
                 image_cache_mb: default_image_cache_mb(),
                 image_cache_max_image_mb: default_image_cache_max_image_mb(),
+                full_refresh_every: 0,
+                key_prev_question: default_key_prev_question(),
+                key_next_question: default_key_next_question(),
+                key_prev_answer: default_key_prev_answer(),
+                key_next_answer: default_key_next_answer(),
             },
             ankiweb: AnkiWebConfig {
                 username: String::new(),
@@ -202,6 +273,20 @@ card_shadows = false
 image_cache_mb = 32
 image_cache_max_image_mb = 16
 
+# Flashing full refresh of the screen after this many rated cards, to clear
+# ghosting: 0 (never), 1, 5, or 10. Also in Settings > Device.
+full_refresh_every = 0
+
+# What the Prev and Next hardware keys do on the question and on the answer
+# side: "nothing", "showanswer", "again", "hard", "good", or "easy".
+# "showanswer" works on the question side only, and a rating on the answer
+# side only. On a card with more than one page, the keys turn the page first.
+# Also in Settings > Device.
+key_prev_question = "nothing"
+key_next_question = "showanswer"
+key_prev_answer = "again"
+key_next_answer = "good"
+
 [ankiweb]
 # AnkiWeb synchronization settings
 # Leave empty to disable sync
@@ -253,6 +338,11 @@ impl Config {
                 "card_shadows",
                 "image_cache_mb",
                 "image_cache_max_image_mb",
+                "full_refresh_every",
+                "key_prev_question",
+                "key_next_question",
+                "key_prev_answer",
+                "key_next_answer",
             ]
             .iter()
             .any(|key| !general_has_key(&contents, key));
@@ -330,6 +420,21 @@ impl Config {
         );
         general["image_cache_max_image_mb"] =
             value(i64::from(self.general.image_cache_max_image_mb));
+        set_with_comment(
+            general,
+            "full_refresh_every",
+            value(i64::from(self.general.full_refresh_every)),
+            FULL_REFRESH_COMMENT,
+        );
+        set_with_comment(
+            general,
+            "key_prev_question",
+            value(self.general.key_prev_question.name()),
+            KEYS_COMMENT,
+        );
+        general["key_next_question"] = value(self.general.key_next_question.name());
+        general["key_prev_answer"] = value(self.general.key_prev_answer.name());
+        general["key_next_answer"] = value(self.general.key_next_answer.name());
 
         let ankiweb = table_mut(&mut document, "ankiweb")?;
         ankiweb["username"] = value(&self.ankiweb.username);
@@ -621,5 +726,76 @@ password = ""
         assert!(contents.contains(r#"card_fallback_fonts = ["Custom Fallback"]"#));
 
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn device_settings_get_defaults_and_round_trip() {
+        let path = temp_config_path("device");
+        fs::write(
+            &path,
+            r#"[general]
+language = "en-GB"
+collection_path = "/tmp/collection"
+
+[ankiweb]
+username = ""
+password = ""
+"#,
+        )
+        .unwrap();
+
+        // Missing keys get the defaults and are written with their comments.
+        let mut config = Config::load_or_create(path.to_str().unwrap()).unwrap();
+        assert_eq!(config.general.full_refresh_every, 0);
+        assert_eq!(config.general.key_config(), KeyConfig::default());
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("# Flashing full refresh"));
+        assert!(contents.contains("full_refresh_every = 0"));
+        assert!(contents.contains("# What the Prev and Next hardware keys do"));
+        assert!(contents.contains(r#"key_prev_question = "nothing""#));
+        assert!(contents.contains(r#"key_next_question = "showanswer""#));
+        assert!(contents.contains(r#"key_prev_answer = "again""#));
+        assert!(contents.contains(r#"key_next_answer = "good""#));
+
+        config.general.full_refresh_every = 5;
+        config.general.key_prev_answer = KeyAction::Hard;
+        config.general.key_next_answer = KeyAction::Easy;
+        config.save().unwrap();
+
+        let config = Config::load_or_create(path.to_str().unwrap()).unwrap();
+        assert_eq!(config.general.full_refresh_every, 5);
+        assert_eq!(config.general.key_prev_answer, KeyAction::Hard);
+        assert_eq!(config.general.key_next_answer, KeyAction::Easy);
+        assert_eq!(config.general.key_next_question, KeyAction::ShowAnswer);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn full_refresh_every_goes_to_the_nearest_choice() {
+        for (value, expected) in [
+            (-3, 0),
+            (0, 0),
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (4, 5),
+            (7, 5),
+            (8, 10),
+            (99, 10),
+        ] {
+            assert_eq!(clamp_full_refresh_every(value), expected, "{value}");
+        }
+        let config: Config = toml::from_str(
+            r#"[general]
+language = "en-GB"
+collection_path = "/tmp/collection"
+full_refresh_every = 7
+
+[ankiweb]
+"#,
+        )
+        .unwrap();
+        assert_eq!(config.general.full_refresh_every, 5);
     }
 }

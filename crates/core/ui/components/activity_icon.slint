@@ -1,0 +1,43 @@
+import { Constants } from "../constants.slint";
+
+export enum ActivityKind {
+    sync,
+    network,
+    loading,
+    done,
+    error,
+}
+
+// A 24x24 activity icon. The animated kinds step through their frames every
+// 500 ms: stepped frames only, no fade or tween (a panel update takes about
+// 440 ms on the PB710). All change stays inside the icon box. The timer runs
+// only while the icon is visible.
+export component ActivityIcon {
+    in property <ActivityKind> kind;
+    in property <bool> animated: true;
+    property <int> frame;
+    property <int> frames: kind == ActivityKind.sync ? 2 : kind == ActivityKind.network ? 4 : kind == ActivityKind.loading ? 3 : 1;
+    width: Constants.icon_size;
+    height: Constants.icon_size;
+
+    changed kind => {
+        frame = 0;
+    }
+    changed animated => {
+        frame = 0;
+    }
+
+    Timer {
+        interval: 500ms;
+        running: root.visible && root.animated && root.frames > 1;
+        triggered => {
+            root.frame = Math.mod(root.frame + 1, root.frames);
+        }
+    }
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: root.kind == ActivityKind.sync ? (root.frame == 0 ? @image-url("../icons/sync_0.svg") : @image-url("../icons/sync_1.svg")) : root.kind == ActivityKind.network ? (root.frame == 0 ? @image-url("../icons/network_0.svg") : root.frame == 1 ? @image-url("../icons/network_1.svg") : root.frame == 2 ? @image-url("../icons/network_2.svg") : @image-url("../icons/network_3.svg")) : root.kind == ActivityKind.loading ? (root.frame == 0 ? @image-url("../icons/loading_0.svg") : root.frame == 1 ? @image-url("../icons/loading_1.svg") : @image-url("../icons/loading_2.svg")) : root.kind == ActivityKind.done ? @image-url("../icons/done.svg") : @image-url("../icons/error.svg");
+    }
+}

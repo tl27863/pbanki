@@ -51,6 +51,7 @@ fn main() {
             slint::platform::set_platform(Box::new(backend)).unwrap();
             let hooks = FrontendHooks {
                 full_present: Some(Rc::new(inkview_slint::request_full_present)),
+                full_refresh: Some(Rc::new(inkview_slint::request_full_refresh)),
                 // The simulator has a BB8 (gray) framebuffer.
                 page_format: PageFormat::Gray8,
                 ..FrontendHooks::default()

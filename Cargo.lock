@@ -4754,6 +4754,7 @@ dependencies = [
  "blitz-html",
  "blitz-paint",
  "blitz-traits",
+ "chrono",
  "image",
  "libc",
  "memmap2",

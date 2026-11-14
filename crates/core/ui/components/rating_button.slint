@@ -1,50 +1,70 @@
-import { Palette } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Constants } from "../constants.slint";
+import { KeyGlyph } from "key_glyph.slint";
 
+// One of the four equal buttons of the answer bar: the interval above the
+// label. Only the interval has the accent color. The key glyphs sit before
+// the label.
+//
+// No pressed, hover, or animated styles: each would be an e-ink update that
+// delays the next card (0.5-0.8 s on the PB710). The next card is the
+// feedback.
 export component RatingButton {
     in property <string> duration;
     in property <color> color;
     in property <string> label;
     in property <bool> enabled: true;
+    // Hairline on the left edge, for every button but the first.
+    in property <bool> separator: false;
+    in property <bool> key-prev: false;
+    in property <bool> key-next: false;
     callback clicked <=> touch.clicked;
-    min-width: max(32px, layout.min-width);
-    min-height: max(32px, layout.min-height);
-    // No pressed, hover, or animated styles: each would be an e-ink update
-    // that delays the next card (0.5-0.8 s on the PB710). The next card is the
-    // feedback.
-    background := Rectangle {
-        border-radius: 4px;
-        background: Palette.control-background;
-        border := Rectangle {
-            border-radius: parent.border-radius;
-            border-width: 1px;
-            border-color: Palette.border;
+    min-width: 32px;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Constants.spacing_xs;
+        Text {
+            text: root.duration;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_caption;
+            font-weight: 700;
+            horizontal-alignment: center;
+            color: root.color;
+            overflow: elide;
         }
 
-        layout := VerticalLayout {
-            padding-left: 12px;
-            padding-right: 12px;
-            padding-top: 5px;
-            padding-bottom: 5px;
+        HorizontalLayout {
             alignment: center;
-            Text {
-                text: root.duration;
-                font-family: "Monospace";
-                font-size: 14px;
-                font-weight: 400;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                color: color;
+            spacing: Constants.spacing_xs;
+            if root.key-prev: VerticalLayout {
+                alignment: center;
+                KeyGlyph {
+                    next: false;
+                }
             }
-
+            if root.key-next: VerticalLayout {
+                alignment: center;
+                KeyGlyph {
+                    next: true;
+                }
+            }
             Text {
                 text: root.label;
-                font-size: 14px;
-                font-weight: 400;
+                font-family: Constants.font_family_standard;
+                font-size: Constants.font_size_content;
+                font-weight: 700;
                 horizontal-alignment: center;
-                vertical-alignment: center;
-                color: Palette.foreground;
+                color: Theme.ink;
+                overflow: elide;
             }
         }
+    }
+
+    if root.separator: Rectangle {
+        x: 0;
+        width: Constants.hairline;
+        background: Theme.line;
     }
 
     touch := TouchArea {

@@ -1,0 +1,14 @@
+// Small hint for a hardware key: the key outline with the Prev or Next
+// arrow (`icons/key_prev.svg`, `icons/key_next.svg`).
+export component KeyGlyph {
+    in property <bool> next;
+    in property <length> size: 20px;
+    width: root.size;
+    height: root.size;
+
+    Image {
+        width: 100%;
+        height: 100%;
+        source: root.next ? @image-url("../icons/key_next.svg") : @image-url("../icons/key_prev.svg");
+    }
+}

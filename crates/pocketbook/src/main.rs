@@ -80,6 +80,7 @@ fn main() {
                         after_sync: Some(Rc::new(move || network::disconnect_after_sync(iv))),
                     },
                     full_present: Some(Rc::new(inkview_slint::request_full_present)),
+                    full_refresh: Some(Rc::new(inkview_slint::request_full_refresh)),
                     page_format,
                 };
                 let app = app::start(config, true, hooks);

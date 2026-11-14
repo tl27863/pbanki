@@ -25,7 +25,9 @@
 - `[general] card_shadows` is false by default: all `box-shadow` is removed from cards, because a blurred shadow costs about 170 ms per page on the PB710 (`blitz-card-render.md`, "Card HTML"). True draws them. Config file only, not in the settings UI; read when the study screen is wired (restart after a change). A config that got `card_shadows = true` from the build of 2026-11-05 keeps it.
 - `[general] image_cache_mb` (default 32) and `image_cache_max_image_mb` (default 16): the decoded image cache of the card renderer, all images and one image, in MB of RGBA. 0 turns it off. Config file only; read when the render thread starts.
 - `[ankiweb].endpoint` is blank for AnkiWeb. `sync_media` is true by default.
-- `load_or_create` adds missing font keys, `system_panel`, `card_shadows` and the image cache keys to an existing config and saves it. New keys get their comment from the template (`set_with_comment`). The generated template contains all keys.
+- `[general] full_refresh_every` (default 0): flashing full refresh after this many rated cards. The values are 0 (never), 1, 5 and 10; another value goes to the nearest one. Also in Settings > Device (`eink-refresh.md`, "Periodic full refresh").
+- `[general] key_prev_question`, `key_next_question`, `key_prev_answer`, `key_next_answer`: the action of the Prev and Next keys on each card side: `nothing`, `showanswer`, `again`, `hard`, `good`, `easy`. Defaults: `nothing`, `showanswer`, `again`, `good`. Also in Settings > Device, which saves each change at once (`card-loading.md`, "Hardware keys").
+- `load_or_create` adds missing font keys, `system_panel`, `card_shadows`, the image cache keys, `full_refresh_every` and the key actions to an existing config and saves it. New keys get their comment from the template (`set_with_comment`). The generated template contains all keys.
 
 ## Settings UI
 

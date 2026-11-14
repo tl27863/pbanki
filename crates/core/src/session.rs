@@ -1,9 +1,11 @@
 //! The open collection and the study state shared by the UI callbacks.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Instant;
 
 use anki::collection::{Collection, CollectionBuilder};
@@ -11,9 +13,32 @@ use anki::prelude::I18n;
 use anki::scheduler::states::SchedulingStates;
 use anki::services::SchedulerService;
 
+use crate::DeckNode;
 use crate::config::Config;
 use crate::fonts::FontCatalog;
+use crate::keys::KeyConfig;
+use crate::stats::StatsData;
 use crate::sync::SyncManager;
+
+/// The deck list of Home (`frontend/decks.rs`).
+#[derive(Default)]
+pub struct DeckList {
+    /// All decks in tree order, as loaded from the collection.
+    pub nodes: Vec<DeckNode>,
+    /// Decks whose subdecks are hidden. Kept for the session; the chevron of
+    /// a row changes it.
+    pub collapsed: HashSet<i64>,
+    /// Decks seen so far. A new deck starts with Anki's collapsed state.
+    pub known: HashSet<i64>,
+    pub page: usize,
+}
+
+/// The stats that the stats screen shows, and its calendar month.
+pub struct StatsState {
+    pub data: StatsData,
+    pub year: i32,
+    pub month: u32,
+}
 
 pub struct LearnSession {
     pub collection: Rc<RefCell<Option<Collection>>>,
@@ -28,8 +53,17 @@ pub struct LearnSession {
     /// `LoadedCard::predicted_next` of the shown card. The next rating logs
     /// whether its card was predicted (`[card] lookahead`).
     pub predicted_next: RefCell<Vec<i64>>,
+    pub deck_list: RefCell<DeckList>,
+    pub stats: RefCell<Option<StatsState>>,
+    /// Copies of the device settings (`GeneralConfig`), updated when
+    /// Settings > Device saves.
+    pub key_config: Cell<KeyConfig>,
+    pub full_refresh_every: Cell<u32>,
+    /// Cards rated since the last flashing full refresh or deck entry.
+    pub rated_since_refresh: Cell<u32>,
     pub font_catalog: FontCatalog,
-    pub sync_manager: Rc<SyncManager>,
+    /// Shared with the sync worker thread.
+    pub sync_manager: Arc<SyncManager>,
 }
 
 pub fn init_session(config: &Config) -> Rc<LearnSession> {
@@ -81,8 +115,13 @@ pub fn init_session(config: &Config) -> Rc<LearnSession> {
         job_seq: Cell::new(0),
         busy: Cell::new(false),
         predicted_next: RefCell::new(Vec::new()),
+        deck_list: RefCell::new(DeckList::default()),
+        stats: RefCell::new(None),
+        key_config: Cell::new(config.general.key_config()),
+        full_refresh_every: Cell::new(config.general.full_refresh_every),
+        rated_since_refresh: Cell::new(0),
         font_catalog,
-        sync_manager: Rc::new(SyncManager::new()),
+        sync_manager: Arc::new(SyncManager::new()),
     })
 }
 
@@ -104,33 +143,22 @@ fn collection_builder(config: &Config) -> CollectionBuilder {
     builder
 }
 
-/// Installs the collection rebuilt by `builder` after a full sync closed it.
+/// Opens the collection again with `builder` after a full sync closed it.
 pub(crate) fn reopen_collection(
-    session: &LearnSession,
     builder: &mut CollectionBuilder,
     config: &Config,
-) -> Result<(), String> {
-    match builder.build() {
-        Ok(collection) => {
-            *session.collection.borrow_mut() = Some(collection);
-            Ok(())
-        }
-        Err(err) => {
-            tracing::error!("Could not reopen collection after full sync: {err}");
-            // Fall back to a plain reopen from disk so a failure here does not
-            // leave the app running without a collection.
-            match collection_builder(config).build() {
-                Ok(collection) => {
-                    *session.collection.borrow_mut() = Some(collection);
-                    Ok(())
-                }
-                Err(fallback_err) => Err(format!(
-                    "the collection could not be reopened ({err}); fallback reopen also failed \
-                     ({fallback_err}). Restart pbAnki."
-                )),
-            }
-        }
-    }
+) -> Result<Collection, String> {
+    builder.build().or_else(|err| {
+        tracing::error!("Could not reopen collection after full sync: {err}");
+        // Fall back to a plain reopen from disk so a failure here does not
+        // leave the app running without a collection.
+        collection_builder(config).build().map_err(|fallback_err| {
+            format!(
+                "the collection could not be reopened ({err}); fallback reopen also failed \
+                 ({fallback_err}). Restart pbAnki."
+            )
+        })
+    })
 }
 
 /// Imports every `*.apkg` in the collection directory (with scheduling and

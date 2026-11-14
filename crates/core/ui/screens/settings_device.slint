@@ -1,0 +1,212 @@
+import { Theme } from "../theme.slint";
+import { Constants, Translations } from "../constants.slint";
+import { DeviceSettings, KeyAction } from "../types.slint";
+import { Stepper } from "../components/stepper.slint";
+import { CycleSelect } from "../components/cycle_select.slint";
+
+component Heading inherits Text {
+    height: 32px;
+    font-family: Constants.font_family_standard;
+    font-size: Constants.font_size_content;
+    font-weight: 700;
+    color: Theme.ink;
+    vertical-alignment: center;
+}
+
+component Caption inherits Text {
+    font-family: Constants.font_family_standard;
+    font-size: Constants.font_size_caption;
+    color: Theme.muted;
+    vertical-alignment: center;
+    wrap: word-wrap;
+}
+
+component Hairline inherits Rectangle {
+    height: Constants.hairline;
+    background: Theme.line;
+}
+
+// One hardware key: its name and its action on each card side.
+component KeyRow {
+    in property <string> name;
+    in property <[string]> question-labels;
+    in property <[string]> answer-labels;
+    in-out property <int> question-index;
+    in-out property <int> answer-index;
+    callback question-changed(index: int);
+    callback answer-changed(index: int);
+    height: Constants.bar_height;
+    // Two equal columns, whatever the labels.
+    property <length> column: (self.width - 52px - 2 * Constants.spacing_m) / 2;
+
+    HorizontalLayout {
+        spacing: Constants.spacing_m;
+        Text {
+            width: 52px;
+            text: root.name;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_content;
+            font-weight: 700;
+            color: Theme.ink;
+            vertical-alignment: center;
+        }
+
+        CycleSelect {
+            width: root.column;
+            labels: root.question-labels;
+            index <=> root.question-index;
+            changed(index) => {
+                root.question-changed(index);
+            }
+        }
+
+        CycleSelect {
+            width: root.column;
+            labels: root.answer-labels;
+            index <=> root.answer-index;
+            changed(index) => {
+                root.answer-changed(index);
+            }
+        }
+    }
+}
+
+// The Device tab: the full refresh interval and the actions of the Prev and
+// Next keys. Each change is saved at once; there is no Save button. A tap on
+// a key action selects the next one.
+export component SettingsDevice {
+    in property <Translations> tr;
+    in-out property <DeviceSettings> settings;
+    callback save(DeviceSettings);
+
+    property <[string]> refresh-labels: ["Never", "Every card", "Every 5 cards", "Every 10 cards"];
+    property <[string]> question-labels: ["Nothing", tr.show_answer];
+    property <[string]> answer-labels: ["Nothing", tr.again, tr.hard, tr.good, tr.easy];
+
+    pure function refresh-index(every: int) -> int {
+        every <= 0 ? 0 : every < 5 ? 1 : every < 10 ? 2 : 3
+    }
+    pure function refresh-value(index: int) -> int {
+        index == 0 ? 0 : index == 1 ? 1 : index == 2 ? 5 : 10
+    }
+    pure function question-index(action: KeyAction) -> int {
+        action == KeyAction.show-answer ? 1 : 0
+    }
+    pure function question-action(index: int) -> KeyAction {
+        index == 1 ? KeyAction.show-answer : KeyAction.nothing
+    }
+    pure function answer-index(action: KeyAction) -> int {
+        action == KeyAction.again ? 1 : action == KeyAction.hard ? 2 : action == KeyAction.good ? 3 : action == KeyAction.easy ? 4 : 0
+    }
+    pure function answer-action(index: int) -> KeyAction {
+        index == 1 ? KeyAction.again : index == 2 ? KeyAction.hard : index == 3 ? KeyAction.good : index == 4 ? KeyAction.easy : KeyAction.nothing
+    }
+
+    VerticalLayout {
+        padding-left: Constants.padding_standard;
+        padding-right: Constants.padding_standard;
+        padding-top: Constants.spacing_m;
+        padding-bottom: Constants.spacing_m;
+        spacing: Constants.spacing_s;
+        alignment: start;
+
+        Heading {
+            text: "Screen refresh";
+        }
+
+        HorizontalLayout {
+            spacing: Constants.spacing_m;
+            Text {
+                text: "Full refresh";
+                font-family: Constants.font_family_standard;
+                font-size: Constants.font_size_content;
+                color: Theme.ink;
+                vertical-alignment: center;
+            }
+
+            Stepper {
+                horizontal-stretch: 1;
+                labels: root.refresh-labels;
+                index: root.refresh-index(root.settings.full_refresh_every);
+                changed(index) => {
+                    root.settings.full_refresh_every = root.refresh-value(index);
+                    root.save(root.settings);
+                }
+            }
+        }
+
+        Caption {
+            text: "A flashing refresh clears ghosting.";
+        }
+
+        Hairline { }
+
+        Heading {
+            text: "Hardware keys";
+        }
+
+        VerticalLayout {
+            header := HorizontalLayout {
+                height: 20px;
+                spacing: Constants.spacing_m;
+                property <length> column: (self.width - 52px - 2 * Constants.spacing_m) / 2;
+                Caption {
+                    width: 52px;
+                    text: "Key";
+                }
+
+                Caption {
+                    width: header.column;
+                    text: "Question side";
+                }
+
+                Caption {
+                    width: header.column;
+                    text: "Answer side";
+                }
+            }
+
+            Hairline { }
+
+            KeyRow {
+                name: "Prev";
+                question-labels: root.question-labels;
+                answer-labels: root.answer-labels;
+                question-index: root.question-index(root.settings.key_prev_question);
+                answer-index: root.answer-index(root.settings.key_prev_answer);
+                question-changed(index) => {
+                    root.settings.key_prev_question = root.question-action(index);
+                    root.save(root.settings);
+                }
+                answer-changed(index) => {
+                    root.settings.key_prev_answer = root.answer-action(index);
+                    root.save(root.settings);
+                }
+            }
+
+            Hairline { }
+
+            KeyRow {
+                name: "Next";
+                question-labels: root.question-labels;
+                answer-labels: root.answer-labels;
+                question-index: root.question-index(root.settings.key_next_question);
+                answer-index: root.answer-index(root.settings.key_next_answer);
+                question-changed(index) => {
+                    root.settings.key_next_question = root.question-action(index);
+                    root.save(root.settings);
+                }
+                answer-changed(index) => {
+                    root.settings.key_next_answer = root.answer-action(index);
+                    root.save(root.settings);
+                }
+            }
+
+            Hairline { }
+        }
+
+        Caption {
+            text: "If a card has more than one page, Prev and Next turn the page first.";
+        }
+    }
+}

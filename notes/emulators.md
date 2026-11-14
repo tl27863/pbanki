@@ -60,7 +60,7 @@ The bundled deck `scripts/sdk-emulator/JLPT_N2_Grammar.apkg` is local only (`.gi
 - Run: `cd crates/desktop && cargo run --features eink-sim`. `PBANKI_EINK_SIM_MS` sets the timings.
 - `SimScreen` (`crates/desktop/src/eink_sim.rs`) implements `inkview_slint::EinkScreen`. It runs the same presenter and damage policy as the device backend.
 - It has a BB8 framebuffer and a queue of pending updates. It applies each update to the visible frame after a delay for its kind. It quantizes to 16, 4, or 2 grays. Full updates show black for the first half.
-- The eink-sim frontend sets `FrontendHooks.full_present`, as the PocketBook frontend does. The winit desktop frontend does not set it.
+- The eink-sim frontend sets `FrontendHooks.full_present` and `full_refresh`, as the PocketBook frontend does. The winit desktop frontend does not set it.
 - minifb reads input once per frame. Thus scripted clicks must hold the button: `xdotool mousedown 1; sleep 0.08; xdotool mouseup 1`.
 
 ## Waveform probe

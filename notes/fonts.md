@@ -39,12 +39,13 @@ Do not use `SLINT_FONT_PATH` or `SLINT_DEFAULT_FONT`. In Slint 1.18 they make th
 
 - `crates/core/build.rs` uses `EmbedForSoftwareRenderer`. It rasterizes each literal font size in the UI before run time. It also embeds the SVG icons, which need it, because runtime SVG decoding is not enabled.
 - A constant `0px` size (for example an unset `font-size` on a std-widgets `CheckBox`) is rasterized at the design size of the font. The result was 380 MB of generated code and an 80 MB binary.
-- Thus `crates/core/ui/screens/settings.slint` sets each CheckBox to `12px` (the default of Slint). The lint rule `pbanki-checkbox-font-size` checks this.
-- The size problem shows only when no CheckBox sets the size. With Slint 1.18, one unset CheckBox among set ones still built at 2.8 MB. All unset gave 264 MB. Thus one missing size is a hidden bug.
-- After UI changes, make sure that `target/*/build/pbanki-core-*/out/main.rs` stays at about 3 MB and has no `pixel_size : 0`.
+- The UI has no `CheckBox` now: `components/toggle.slint` replaced it, and the lint rule `pbanki-checkbox-font-size` is gone. The only std-widget left is the `LineEdit` of the desktop settings, which sets its `font-size`. Give every new text element or std-widget an explicit size.
+- The UI uses four sizes (30, 20, 15, 12 px) in the weights 400 and 700.
+- The icons are 72×72 SVGs (the Figma component size), shown at 24 px. So they are embedded at the physical size of a 300 dpi panel (scale 3) and are not scaled up.
+- After UI changes, make sure that `target/*/build/pbanki-core-*/out/main.rs` stays at about 3 MB and has no `pixel_size : 0`. After the redesign it is 4.2 MB (2.8 MB before; the difference is the icons and the 700 weight at 12, 15, 20 and 30 px).
 
 ## Embedded bitmap font
 
 - The embedded bitmap font is the default sans font of the build host (Noto Sans here). It has only ASCII plus the characters from `.slint` literals.
 - With `systemfonts`, Slint uses a bitmap font only in two cases: the requested family is equal to its name, or as the last fallback when the requested family resolves to nothing or no family is requested.
-- Thus `MainWindow` sets `default-font-family: Constants.font_family_standard`. Std-widgets labels (CheckBox, Button) then also use the runtime UI font and show translated characters.
+- Thus `MainWindow` sets `default-font-family: Constants.font_family_standard`. Std-widgets text (the `LineEdit` of the desktop) then also uses the runtime UI font and shows translated characters.

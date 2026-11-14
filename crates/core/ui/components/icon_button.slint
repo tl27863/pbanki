@@ -1,0 +1,22 @@
+import { Constants } from "../constants.slint";
+
+// Icon with a 44x44 touch target. A disabled button shows no icon. No pressed, hover, or animated styles: each
+// would be an extra e-ink update (lint rule `pbanki-study-controls-no-states`).
+export component IconButton {
+    in property <image> icon;
+    in property <bool> enabled: true;
+    callback clicked <=> touch.clicked;
+    width: Constants.bar_height;
+    height: Constants.bar_height;
+
+    Image {
+        source: root.icon;
+        visible: root.enabled;
+        width: Constants.icon_size;
+        height: Constants.icon_size;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+    }
+}

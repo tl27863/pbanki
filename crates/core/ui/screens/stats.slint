@@ -1,0 +1,535 @@
+import { Theme } from "../theme.slint";
+import { Constants } from "../constants.slint";
+import { StatsView } from "../types.slint";
+import { TabHeader } from "../components/tab_header.slint";
+import { IconButton } from "../components/icon_button.slint";
+import { Loader } from "../components/loader.slint";
+
+component Heading inherits Text {
+    font-family: Constants.font_family_standard;
+    font-size: Constants.font_size_content;
+    font-weight: 700;
+    color: Theme.ink;
+    vertical-alignment: center;
+}
+
+component Caption inherits Text {
+    font-family: Constants.font_family_standard;
+    font-size: Constants.font_size_caption;
+    color: Theme.muted;
+    vertical-alignment: center;
+}
+
+component MonthTitle inherits Text {
+    font-family: Constants.font_family_standard;
+    font-size: Constants.font_size_subcontent;
+    color: Theme.ink;
+    horizontal-alignment: center;
+    vertical-alignment: center;
+}
+
+component Hairline inherits Rectangle {
+    height: Constants.hairline;
+    background: Theme.line;
+}
+
+// A section heading with a summary on the right.
+component SectionHead {
+    in property <string> title;
+    in property <string> summary;
+    height: 28px;
+    HorizontalLayout {
+        spacing: Constants.spacing_s;
+        Heading {
+            text: root.title;
+        }
+
+        Text {
+            horizontal-stretch: 1;
+            text: root.summary;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_subcontent;
+            color: Theme.muted;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
+
+component TodayCell {
+    in property <string> value;
+    in property <string> label;
+    horizontal-stretch: 1;
+    VerticalLayout {
+        Text {
+            text: root.value;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_heading;
+            font-weight: 700;
+            color: Theme.ink;
+            overflow: elide;
+        }
+
+        Caption {
+            text: root.label;
+        }
+    }
+}
+
+component CountRow {
+    in property <string> label;
+    in property <string> count;
+    in property <string> percent;
+    in property <color> swatch;
+    // The suspended cards: an outline in the muted color.
+    in property <bool> inactive: false;
+    height: 19px;
+    HorizontalLayout {
+        spacing: Constants.spacing_s;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 10px;
+                height: 10px;
+                border-width: Constants.hairline;
+                border-color: root.inactive ? Theme.muted : Theme.ink;
+                background: root.swatch;
+            }
+        }
+
+        Text {
+            horizontal-stretch: 1;
+            text: root.label;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_subcontent;
+            color: Theme.ink;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: root.count;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_subcontent;
+            font-weight: 700;
+            color: Theme.ink;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+
+        Caption {
+            width: 40px;
+            text: root.percent;
+            horizontal-alignment: right;
+        }
+    }
+}
+
+// Black bars on a hairline axis, with labels below the axis.
+component BarChart {
+    in property <[int]> values;
+    in property <int> peak;
+    in property <string> left-label;
+    in property <string> middle-label;
+    in property <string> right-label;
+    min-height: 56px;
+    vertical-stretch: 1;
+    property <length> label-height: 16px;
+    property <length> plot-height: self.height - label-height - Constants.hairline;
+    property <length> slot: self.width / max(1, values.length);
+
+    for value[index] in root.values: Rectangle {
+        property <length> bar: root.peak > 0 ? root.plot-height * value / root.peak : 0px;
+        x: index * root.slot + 1px;
+        // A day with a value shows at least a 1 px bar.
+        height: value > 0 ? max(1px, self.bar) : 0px;
+        y: root.plot-height - self.height;
+        width: max(1px, root.slot - 2px);
+        background: Theme.ink;
+    }
+
+    Rectangle {
+        y: root.plot-height;
+        height: Constants.hairline;
+        background: Theme.line;
+    }
+
+    Caption {
+        x: 0;
+        y: root.height - root.label-height;
+        height: root.label-height;
+        text: root.left-label;
+    }
+
+    Caption {
+        x: (root.width - self.width) / 2;
+        y: root.height - root.label-height;
+        height: root.label-height;
+        text: root.middle-label;
+    }
+
+    Caption {
+        x: root.width - self.width;
+        y: root.height - root.label-height;
+        height: root.label-height;
+        text: root.right-label;
+    }
+}
+
+component Overview {
+    in property <StatsView> stats;
+    property <length> bar-width: self.width - 2 * Constants.padding_standard;
+
+    pure function segment(count: int) -> length {
+        stats.counts_total > 0 ? bar-width * count / stats.counts_total : 0px
+    }
+
+    VerticalLayout {
+        padding-left: Constants.padding_standard;
+        padding-right: Constants.padding_standard;
+        padding-top: Constants.spacing_s;
+        padding-bottom: Constants.spacing_s;
+        spacing: Constants.spacing_xs;
+
+        SectionHead {
+            title: "Today";
+        }
+
+        HorizontalLayout {
+            spacing: Constants.spacing_s;
+            TodayCell {
+                value: stats.today_cards;
+                label: "Cards";
+            }
+
+            TodayCell {
+                value: stats.today_time;
+                label: "Time";
+            }
+
+            TodayCell {
+                value: stats.today_again;
+                label: "Again";
+            }
+
+            TodayCell {
+                value: stats.today_correct;
+                label: "Correct";
+            }
+        }
+
+        Hairline { }
+
+        SectionHead {
+            title: "Card counts";
+            summary: stats.counts_summary;
+        }
+
+        // Stacked bar: new, learning, young, mature, then the suspended
+        // cards as the open end.
+        Rectangle {
+            height: 14px;
+            border-width: Constants.hairline;
+            border-color: Theme.ink;
+            background: Theme.paper;
+
+            Rectangle {
+                x: root.segment(stats.counts[0]);
+                width: root.segment(stats.counts[1]);
+                background: Theme.tone-30;
+            }
+
+            Rectangle {
+                x: root.segment(stats.counts[0] + stats.counts[1]);
+                width: root.segment(stats.counts[2]);
+                background: Theme.tone-60;
+            }
+
+            Rectangle {
+                x: root.segment(stats.counts[0] + stats.counts[1] + stats.counts[2]);
+                width: root.segment(stats.counts[3]);
+                background: Theme.ink;
+            }
+
+            // The line between the new and the learning cards.
+            if stats.counts[0] > 0: Rectangle {
+                x: root.segment(stats.counts[0]);
+                width: Constants.hairline;
+                background: Theme.ink;
+            }
+        }
+
+        VerticalLayout {
+            CountRow {
+                label: "New";
+                count: stats.count_texts[0];
+                percent: stats.count_percents[0];
+                swatch: Theme.paper;
+            }
+
+            CountRow {
+                label: "Learning";
+                count: stats.count_texts[1];
+                percent: stats.count_percents[1];
+                swatch: Theme.tone-30;
+            }
+
+            CountRow {
+                label: "Young";
+                count: stats.count_texts[2];
+                percent: stats.count_percents[2];
+                swatch: Theme.tone-60;
+            }
+
+            CountRow {
+                label: "Mature";
+                count: stats.count_texts[3];
+                percent: stats.count_percents[3];
+                swatch: Theme.ink;
+            }
+
+            CountRow {
+                label: "Suspended";
+                count: stats.count_texts[4];
+                percent: stats.count_percents[4];
+                swatch: Theme.paper;
+                inactive: true;
+            }
+        }
+
+        Hairline { }
+
+        SectionHead {
+            title: "Future due";
+            summary: stats.future_summary;
+        }
+
+        BarChart {
+            values: stats.future_due;
+            peak: stats.future_due_max;
+            left-label: "Today";
+            middle-label: "+15 days";
+            right-label: "+30 days";
+        }
+    }
+}
+
+component History {
+    in property <StatsView> stats;
+    callback month-changed(delta: int);
+    property <length> cell-width: (self.width - 2 * Constants.padding_standard) / 7;
+    property <length> cell-height: 24px;
+
+    VerticalLayout {
+        padding-left: Constants.padding_standard;
+        padding-right: Constants.padding_standard;
+        padding-top: Constants.spacing_xs;
+        padding-bottom: Constants.spacing_s;
+        spacing: Constants.spacing_xs;
+
+        HorizontalLayout {
+            height: 36px;
+            Heading {
+                horizontal-stretch: 1;
+                text: "Calendar";
+            }
+
+            IconButton {
+                width: 32px;
+                height: 36px;
+                icon: @image-url("../icons/prev.svg");
+                enabled: stats.month_has_prev;
+                clicked => {
+                    root.month-changed(-1);
+                }
+            }
+
+            // As wide as the longest title, so the chevrons do not move when
+            // the month changes: a second tap must hit the same chevron.
+            Rectangle {
+                width: longest-title.preferred-width;
+                longest-title := MonthTitle {
+                    text: "September 0000";
+                    visible: false;
+                }
+
+                MonthTitle {
+                    width: 100%;
+                    height: 100%;
+                    text: stats.month_title;
+                }
+            }
+
+            IconButton {
+                width: 32px;
+                height: 36px;
+                icon: @image-url("../icons/next.svg");
+                enabled: stats.month_has_next;
+                clicked => {
+                    root.month-changed(1);
+                }
+            }
+        }
+
+        Rectangle {
+            height: 16px;
+            for name[index] in stats.weekdays: Caption {
+                x: index * root.cell-width;
+                width: root.cell-width;
+                height: parent.height;
+                text: name;
+                horizontal-alignment: center;
+            }
+        }
+
+        // Always six weeks, so the charts below do not move with the month.
+        Rectangle {
+            height: 6 * root.cell-height;
+            for level[index] in stats.month_levels: Rectangle {
+                property <int> cell: index + stats.month_lead;
+                x: Math.mod(self.cell, 7) * root.cell-width + 2px;
+                y: Math.floor(self.cell / 7) * root.cell-height + 2px;
+                width: root.cell-width - 4px;
+                height: root.cell-height - 4px;
+                border-width: level == 1 ? Constants.hairline : 0px;
+                border-color: Theme.ink;
+                background: level == 2 ? Theme.ink : Theme.paper;
+
+                Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: index + 1;
+                    font-family: Constants.font_family_standard;
+                    font-size: Constants.font_size_subcontent;
+                    font-weight: index + 1 == stats.month_today ? 700 : 400;
+                    color: level == 2 ? Theme.paper : level == 3 ? Theme.muted : Theme.ink;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        HorizontalLayout {
+            height: 16px;
+            spacing: Constants.spacing_xs;
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 10px;
+                    height: 10px;
+                    border-width: Constants.hairline;
+                    border-color: Theme.ink;
+                }
+            }
+
+            Caption {
+                text: "1–49 reviews";
+            }
+
+            Rectangle {
+                width: Constants.spacing_xs;
+            }
+
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 10px;
+                    height: 10px;
+                    background: Theme.ink;
+                }
+            }
+
+            Caption {
+                text: "50 or more";
+            }
+
+            Caption {
+                horizontal-stretch: 1;
+                text: stats.month_summary;
+                horizontal-alignment: right;
+                overflow: elide;
+            }
+        }
+
+        Hairline { }
+
+        SectionHead {
+            title: "Reviews";
+            summary: stats.reviews_summary;
+        }
+
+        BarChart {
+            values: stats.reviews;
+            peak: stats.reviews_max;
+            // The month of the calendar above.
+            left-label: stats.reviews_first;
+            middle-label: stats.reviews_middle;
+            right-label: stats.reviews_last;
+        }
+
+        Hairline { }
+
+        SectionHead {
+            title: "Intervals";
+            summary: stats.intervals;
+        }
+    }
+}
+
+// The stats of one deck: Overview (0) and History (1). The deck name is in
+// a bar at the bottom.
+export component StatsScreen {
+    in property <StatsView> stats;
+    in property <bool> loading;
+    in-out property <int> tab;
+    callback back();
+    callback month-changed(delta: int);
+
+    if root.loading: Loader {
+        text: "Loading deck";
+    }
+
+    if !root.loading: VerticalLayout {
+        TabHeader {
+            tabs: ["Overview", "History"];
+            current <=> root.tab;
+            back => {
+                root.back();
+            }
+        }
+
+        if root.tab == 0: Overview {
+            vertical-stretch: 1;
+            stats: root.stats;
+        }
+
+        if root.tab != 0: History {
+            vertical-stretch: 1;
+            stats: root.stats;
+            month-changed(delta) => {
+                root.month-changed(delta);
+            }
+        }
+
+        Rectangle {
+            height: 32px;
+            Rectangle {
+                y: 0;
+                height: Constants.hairline;
+                background: Theme.line;
+            }
+
+            Text {
+                x: Constants.padding_standard;
+                width: parent.width - 2 * Constants.padding_standard;
+                text: root.stats.deck_name;
+                font-family: Constants.font_family_standard;
+                font-size: Constants.font_size_subcontent;
+                color: Theme.ink;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+}
