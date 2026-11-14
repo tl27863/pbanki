@@ -1,0 +1,63 @@
+import { Theme } from "../theme.slint";
+import { Constants } from "../constants.slint";
+
+// A label with an on/off switch. Replaces the std-widgets CheckBox.
+// `separator` draws a hairline below the row.
+export component Toggle {
+    in property <string> text;
+    in-out property <bool> checked;
+    in property <bool> enabled: true;
+    in property <bool> separator: false;
+    callback toggled();
+    height: Constants.bar_height;
+
+    HorizontalLayout {
+        spacing: Constants.spacing_m;
+        Text {
+            horizontal-stretch: 1;
+            text: root.text;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_content;
+            color: Theme.ink;
+            vertical-alignment: center;
+            wrap: word-wrap;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 44px;
+                height: 24px;
+                border-radius: self.height / 2;
+                border-width: 1.5px;
+                border-color: Theme.ink;
+                background: root.checked ? Theme.ink : Theme.paper;
+
+                Rectangle {
+                    x: root.checked ? parent.width - self.width - 4px : 4px;
+                    y: 4px;
+                    width: 16px;
+                    height: 16px;
+                    border-radius: self.height / 2;
+                    border-width: root.checked ? 0px : 1.5px;
+                    border-color: Theme.ink;
+                    background: Theme.paper;
+                }
+            }
+        }
+    }
+
+    if root.separator: Rectangle {
+        y: parent.height - self.height;
+        height: Constants.hairline;
+        background: Theme.line;
+    }
+
+    TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled();
+        }
+    }
+}

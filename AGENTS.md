@@ -10,12 +10,14 @@ The repository is a Cargo workspace with one `Cargo.lock` and one `target/`. The
   - `build.rs` compiles `ui/main.slint`. `lib.rs` calls `slint::include_modules!()`.
   - `app.rs` — startup for both frontends. `app::start(config, native_keyboard, hooks)` returns an `App`. `App::run` starts the auto-sync and the event loop.
   - `session.rs` — `LearnSession`, `init_session`, `reopen_collection`, `reset_session_memory`.
+  - `keys.rs` — hardware keys of the study screen: `KeyAction`, `KeyConfig`, the pure `resolve`.
+  - `stats.rs` — deck statistics: `query` (worker), the pure `build` and `month_levels`.
   - `study.rs` — card loading and rating on the worker thread (`LoadedCard`, `next_card`, `rate_card`).
   - `card_render/` — card pages rendered with Blitz: `mod.rs` (`CardRenderer`, the render thread), `html.rs` (card document, type-in and audio tags), `paginate.rs` (page breaks from line boxes), `raster.rs` (card fonts, media, pixels), `image_cache.rs` (decoded images, kept as PAM). See `notes/blitz-card-render.md`.
-  - `sync/` — `mod.rs` (sync, full sync, media sync), `client.rs` (`SyncManager`), `auth.rs` (login, endpoint), `backup.rs` (backup before a full download).
-  - `frontend/` — Slint wiring: `mod.rs` (`FrontendHooks`, `init_ui`, `wire_callbacks`), `card_jobs.rs`, `card_pages.rs` (page store for `page-image`), `study.rs`, `settings.rs`, `sync.rs` (`SyncHooks`), `models.rs` (view models, `SyncState` constructors).
+  - `sync/` — `mod.rs` (sync, full sync, media sync; they run on the job worker), `client.rs` (`SyncManager`), `auth.rs` (login, endpoint), `backup.rs` (backup before a full download).
+  - `frontend/` — Slint wiring: `mod.rs` (`FrontendHooks`, `init_ui`, `wire_callbacks`), `card_jobs.rs` (the collection job runner and the card jobs), `card_pages.rs` (page store for `page-image`), `decks.rs` (paged deck list), `study.rs`, `stats.rs`, `settings.rs` (sync and device settings), `sync.rs` (`SyncHooks`), `models.rs` (view models, deck paging, `SyncState` constructors).
   - `config.rs`, `fonts.rs`, `logging.rs` (log subscriber), `profile.rs`.
-  - `ui/` — Slint sources.
+  - `ui/` — Slint sources: `screens/` (Home, Study, Settings with its Sync and Device tabs, Stats), `components/` (bars, buttons, pager, toggle, stepper, activity icon, loader), `icons/`, `theme.slint`, `constants.slint`, `types.slint`. Nothing scrolls.
 - `crates/pocketbook/` — package and binary `pbanki`, the PocketBook frontend over `inkview-rs`.
   - `src/main.rs` — platform setup, hooks, device log, panel and update-policy options.
   - `src/network.rs` — Wi-Fi. `src/keyboard.rs` — native keyboard wrapper.
@@ -73,7 +75,7 @@ Dev sync server: `make -C ../pbanki-sync-server up`. The endpoint is `http://127
 | `notes/build.md` | Toolchain, PocketBook builds, release bundle, tests, clippy |
 | `notes/emulators.md` | SDK emulator, eink-sim, waveform probe |
 | `notes/inkview-backend.md` | The inkview-rs fork, rendering, system panel, device info |
-| `notes/eink-refresh.md` | Update path, full presents, update policy, and why they are like this |
+| `notes/eink-refresh.md` | Update path, full presents, periodic full refresh, activity icons, update policy, and why they are like this |
 | `notes/logging.md` | Log output, levels, `PBANKI_LOG` filter |
 | `notes/eink-logs.md` | `[eink …]` log lines and how to read them |
 | `notes/performance.md` | Profiling, PB710 baselines, waveform probe results |
@@ -81,9 +83,11 @@ Dev sync server: `make -C ../pbanki-sync-server up`. The endpoint is `http://127
 | `notes/eink-presenter-refactor.md` | Blitz phase 1: the e-ink presenter moved out of inkview-slint into `inkview-eink` (done) |
 | `notes/blitz-card-render.md` | Blitz card pages in the study session: render thread, pagination, colors, audio placeholders |
 | `notes/test-decks.md` | CSS bench deck, host render harness, render log analyzer |
-| `notes/card-loading.md` | Worker jobs, `busy`, loading screens, explicit redraws |
+| `notes/card-loading.md` | Worker jobs, `busy`, loading screens, explicit redraws, hardware keys, the paged deck list |
 | `notes/sync.md` | Sync, Wi-Fi, sync hooks, dev sync server |
 | `notes/fonts.md` | Card fonts, Slint fonts, glyph embedding |
 | `notes/collection-and-config.md` | Collection setup, package import, config file |
 | `notes/lint.md` | ast-grep rules and workflow |
+| `notes/ui-redesign.md` | The black-and-white redesign: screens, tokens, activity icons, what was built, open items and device checks |
+| `notes/hw-keys-and-stats.md` | Research for the redesign: hardware key path and mapping, Anki stats API |
 | `notes/deep-research/` | Dated research reports |

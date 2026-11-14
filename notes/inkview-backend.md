@@ -46,7 +46,7 @@ pbAnki uses `inkview-slint` from the fork `tl27863/inkview-rs`. The fork develop
 - `frontend::wire_callbacks` sets `Theme.color-panel` once at startup from `FrontendHooks::page_format`: `Rgb8` (`RGB24` panel, desktop) gives the color theme, `Gray8` (`BB8` panel, eink-sim) gives the gray theme.
 - Gray theme: luma makes red, green, and blue similar dark grays. So the deck counts and the rating durations are black, and the label or position carries the meaning. Sync errors are bold black, warnings are dark gray (`#404040`).
 - Neutral grays (`#808080`, `#606060`, white) are the same in both themes.
-- The SVG icons (`ui/icons/`) use `#323544`. This is almost neutral and is not themed.
+- The SVG icons (`ui/icons/`) use `stroke="black"` and black fills. They are not themed.
 - InkView events reach the backend as `inkview_slint::Event::InkviewEvent`.
 - `invoke_from_event_loop` callbacks arrive on the same channel. They run in queue order, before timers and before the full-present latch.
 - `update_timers_and_animations()` runs after event dispatch. Thus Slint `changed` callbacks that input queued render in the same iteration.

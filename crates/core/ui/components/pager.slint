@@ -1,0 +1,40 @@
+import { Theme } from "../theme.slint";
+import { Constants } from "../constants.slint";
+import { IconButton } from "icon_button.slint";
+
+// Previous and next buttons around "1 / 3". With one page it shows nothing but
+// keeps its height, so the rows per page do not depend on the page count.
+export component Pager {
+    in property <int> page;
+    in property <int> page-count;
+    callback changed(delta: int);
+    height: Constants.bar_height;
+
+    if root.page-count > 1: HorizontalLayout {
+        alignment: center;
+        spacing: Constants.spacing_m;
+        IconButton {
+            icon: @image-url("../icons/prev.svg");
+            clicked => {
+                root.changed(-1);
+            }
+        }
+
+        Text {
+            text: (root.page + 1) + " / " + root.page-count;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_subcontent;
+            color: Theme.ink;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            min-width: 64px;
+        }
+
+        IconButton {
+            icon: @image-url("../icons/next.svg");
+            clicked => {
+                root.changed(1);
+            }
+        }
+    }
+}

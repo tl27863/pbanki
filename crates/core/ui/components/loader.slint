@@ -1,0 +1,41 @@
+import { Theme } from "../theme.slint";
+import { Constants } from "../constants.slint";
+
+// Full-screen loader: four squares above one line of text. One more square
+// fills every 500 ms, then it starts again. Only the squares change.
+export component Loader {
+    in property <string> text;
+    property <int> step;
+
+    Timer {
+        interval: 500ms;
+        running: root.visible;
+        triggered => {
+            root.step = Math.mod(root.step + 1, 4);
+        }
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Constants.spacing_l;
+        HorizontalLayout {
+            alignment: center;
+            spacing: Constants.spacing_s;
+            for index in 4: Rectangle {
+                width: 12px;
+                height: 12px;
+                border-width: 2px;
+                border-color: Theme.ink;
+                background: index <= root.step ? Theme.ink : Theme.paper;
+            }
+        }
+
+        Text {
+            text: root.text;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_content;
+            color: Theme.ink;
+            horizontal-alignment: center;
+        }
+    }
+}

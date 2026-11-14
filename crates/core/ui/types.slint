@@ -10,11 +10,6 @@ export struct DeckNode {
 	parent_index: int,
 }
 
-export struct DeckTree {
-	due_total: int,
-	deck_nodes: [DeckNode],
-}
-
 export struct CardNode {
 	id: duration,
 	deck: DeckNode,
@@ -42,6 +37,8 @@ export struct SyncState {
     status_message: string,
     has_error: bool,
     has_warning: bool,
+    // The last sync ended without an error. Home shows the done icon.
+    done: bool,
     full_sync_required: bool,
     can_upload: bool,
     can_download: bool,
@@ -52,4 +49,81 @@ export enum EditField {
     endpoint,
     username,
     password,
+}
+
+// What a hardware key does on a card side (`keys.rs`).
+export enum KeyAction {
+    nothing,
+    show-answer,
+    again,
+    hard,
+    good,
+    easy,
+}
+
+// The hardware keys that the app tells apart. Left, Down and PageDown count
+// as Prev; Right, Up, PageUp, Return and Menu count as Next.
+export enum HwKey {
+    prev,
+    next,
+}
+
+// The configured key actions, for the key glyphs of the study screen.
+export struct KeyHints {
+    prev_question: KeyAction,
+    next_question: KeyAction,
+    prev_answer: KeyAction,
+    next_answer: KeyAction,
+}
+
+export struct DeviceSettings {
+    // Flashing full refresh after this many rated cards. 0 is never.
+    full_refresh_every: int,
+    key_prev_question: KeyAction,
+    key_next_question: KeyAction,
+    key_prev_answer: KeyAction,
+    key_next_answer: KeyAction,
+}
+
+// The stats of one deck (`stats.rs`, `frontend/stats.rs`). Rust formats the
+// numbers.
+export struct StatsView {
+    deck_name: string,
+    // Today.
+    today_cards: string,
+    today_time: string,
+    today_again: string,
+    today_correct: string,
+    // Card counts: new, learning, young, mature, suspended (with buried).
+    counts: [int],
+    count_texts: [string],
+    count_percents: [string],
+    // All five together: the length of the stacked bar.
+    counts_total: int,
+    counts_summary: string,
+    // Cards due on each of the next 30 days, today first.
+    future_due: [int],
+    future_due_max: int,
+    future_summary: string,
+    // Reviews on each day of the calendar month, day 1 first. The labels are
+    // the first, middle, and last day ("Nov 1", "Nov 15", "Nov 30").
+    reviews: [int],
+    reviews_max: int,
+    reviews_first: string,
+    reviews_middle: string,
+    reviews_last: string,
+    // The mean per day of the month up to today.
+    reviews_summary: string,
+    intervals: string,
+    // The calendar month. `month_lead` is the number of empty cells before
+    // day 1. Levels: 0 no reviews, 1 outline (1-49), 2 solid (50 or more),
+    // 3 future. `month_today` is the day of today, or 0 in another month.
+    month_title: string,
+    month_lead: int,
+    month_levels: [int],
+    month_today: int,
+    month_summary: string,
+    month_has_prev: bool,
+    month_has_next: bool,
+    weekdays: [string],
 }

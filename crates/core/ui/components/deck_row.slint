@@ -1,0 +1,97 @@
+import { Theme } from "../theme.slint";
+import { Constants } from "../constants.slint";
+import { DeckNode } from "../types.slint";
+import { IconButton } from "icon_button.slint";
+
+// A count of the deck list. Zero is muted.
+export component DeckCount inherits Text {
+    in property <int> count;
+    in property <color> accent;
+    width: 40px;
+    text: root.count;
+    font-family: Constants.font_family_standard;
+    font-size: Constants.font_size_subcontent;
+    font-weight: root.count == 0 ? 400 : 700;
+    color: root.count == 0 ? Theme.muted : root.accent;
+    horizontal-alignment: right;
+    vertical-alignment: center;
+}
+
+// One fixed-height row of the deck list: indent, chevron (decks with
+// subdecks), name, the three counts, and the stats button. The row does not
+// change `collapsed`: it emits `toggle`, and Rust rebuilds the page.
+export component DeckRow {
+    in property <DeckNode> deck;
+
+    callback toggle();
+    callback deck_clicked();
+    callback stats_clicked();
+    height: Constants.deck_row_height;
+
+    TouchArea {
+        clicked => {
+            root.deck_clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Constants.padding_standard + (root.deck.level - 1) * Constants.spacing_m - (root.deck.has_children ? 6px : 0px);
+        padding-right: Constants.padding_standard - 10px;
+
+        if root.deck.has_children: Rectangle {
+            width: 30px;
+            Image {
+                x: 0;
+                width: Constants.icon_size;
+                height: Constants.icon_size;
+                source: root.deck.collapsed ? @image-url("../icons/chevron_right.svg") : @image-url("../icons/chevron_down.svg");
+            }
+
+            TouchArea {
+                clicked => {
+                    root.toggle();
+                }
+            }
+        }
+        Text {
+            horizontal-stretch: 1;
+            text: root.deck.name;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_content;
+            color: Theme.ink;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        DeckCount {
+            count: root.deck.new;
+            accent: Theme.count-new;
+        }
+
+        DeckCount {
+            count: root.deck.learn;
+            accent: Theme.count-learn;
+        }
+
+        DeckCount {
+            count: root.deck.due;
+            accent: Theme.count-due;
+        }
+
+        IconButton {
+            icon: @image-url("../icons/stats.svg");
+            clicked => {
+                root.stats_clicked();
+            }
+        }
+    }
+
+    // Hairline below the row.
+    Rectangle {
+        x: Constants.padding_standard;
+        y: parent.height - self.height;
+        width: parent.width - 2 * Constants.padding_standard;
+        height: Constants.hairline;
+        background: Theme.line;
+    }
+}

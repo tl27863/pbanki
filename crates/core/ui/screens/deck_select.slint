@@ -1,103 +1,141 @@
 import { Theme } from "../theme.slint";
-import { ListView } from "std-widgets.slint";
-import { Deck } from "../components/deck.slint";
 import { Constants, Translations } from "../constants.slint";
-import { DeckNode, SyncState } from "../types.slint";
+import { DeckNode, HwKey, SyncState } from "../types.slint";
+import { DeckRow } from "../components/deck_row.slint";
+import { TopBar } from "../components/top_bar.slint";
+import { IconButton } from "../components/icon_button.slint";
+import { Pager } from "../components/pager.slint";
+import { ActivityIcon, ActivityKind } from "../components/activity_icon.slint";
 
-component Menu {
-    in property <Translations> tr;
-    in property <int> due;
+// The sync button is also the sync indicator: it animates in place during a
+// sync and ends on done or error. The error text is on Settings > Sync.
+component SyncButton {
     in property <SyncState> sync_state;
+    callback clicked <=> touch.clicked;
+    width: Constants.bar_height;
+    height: Constants.bar_height;
 
-    callback settings_clicked();
-    callback sync_clicked();
-
-    HorizontalLayout {
-        VerticalLayout {
-            alignment: start;
-            spacing: Constants.spacing_standard;
-            Text {
-                text: "pbAnki";
-                font-family: Constants.font_family_standard;
-                font-size: Constants.font_size_heading;
-                font-weight: 800;
-            }
-
-            Text {
-                text: due + tr.cards_due_suffix;
-                font-family: Constants.font_family_standard;
-            }
-
-            if sync_state.status_message != "": Text {
-                text: sync_state.status_message;
-                font-family: Constants.font_family_standard;
-                font-size: Constants.font_size_subcontent;
-                color: sync_state.has_error ? Theme.status-error : (sync_state.has_warning ? Theme.status-warning : Theme.status-normal);
-                font-weight: sync_state.has_error ? Theme.status-error-weight : 400;
-                wrap: TextWrap.word-wrap;
-            }
-        }
-
-        HorizontalLayout {
-            alignment: end;
-            spacing: Constants.spacing_medium;
-
-            TouchArea {
-                Image {
-                    source: @image-url("../icons/reload.svg");
-                }
-
-                clicked => {
-                    sync_clicked();
-                }
-            }
-
-            TouchArea {
-                Image {
-                    source: @image-url("../icons/settings.svg");
-                }
-
-                clicked => {
-                    settings_clicked();
-                }
-            }
-        }
+    ActivityIcon {
+        kind: root.sync_state.is_syncing ? ActivityKind.sync : root.sync_state.has_error || root.sync_state.has_warning ? ActivityKind.error : root.sync_state.done ? ActivityKind.done : ActivityKind.sync;
+        animated: root.sync_state.is_syncing;
     }
+
+    touch := TouchArea { }
 }
 
+component ColumnLabel inherits Text {
+    width: 40px;
+    font-family: Constants.font_family_standard;
+    font-size: Constants.font_size_caption;
+    color: Theme.muted;
+    horizontal-alignment: right;
+    vertical-alignment: center;
+}
+
+// Home: top bar, the column header, one fixed page of deck rows, and the
+// pager. Nothing scrolls. Rust builds the page (`frontend/decks.rs`).
 export component DeckSelectScreen {
     in property <Translations> tr;
-    in property <int> due_total;
     in property <SyncState> sync_state;
-    in-out property <[DeckNode]> deck_nodes;
+    in property <[DeckNode]> page-rows;
+    in property <int> page;
+    in property <int> page-count;
 
     callback deck_clicked(deck: DeckNode);
+    callback deck_toggle(deck: DeckNode);
+    callback stats_clicked(deck: DeckNode);
+    callback page_changed(delta: int);
     callback settings_clicked();
     callback sync_clicked();
 
-    VerticalLayout {
-        Menu {
-            due: due_total;
-            tr: tr;
-            sync_state: sync_state;
-            settings_clicked => {
-                settings_clicked();
+    forward-focus: focus-scope;
+
+    // Key focus for the Prev and Next keys. From a timer, not `init`: see
+    // the lint rule `pbanki-no-focus-in-init`.
+    Timer {
+        interval: 1ms;
+        running: true;
+        triggered => {
+            self.running = false;
+            focus-scope.focus();
+        }
+    }
+
+    focus-scope := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.LeftArrow || event.text == Key.DownArrow || event.text == Key.PageDown {
+                root.page_changed(-1);
+                return accept;
             }
-            sync_clicked => {
-                sync_clicked();
+            if event.text == Key.RightArrow || event.text == Key.UpArrow || event.text == Key.PageUp {
+                root.page_changed(1);
+                return accept;
             }
+            reject
         }
 
-        ListView {
-            mouse-drag-pan-enabled: true;
-            for deck[index] in deck_nodes: Deck {
-                deck: deck;
-                shown: deck_nodes[deck.parent_index].collapsed == false;
-                toggle => {
-                    deck_nodes[index].collapsed = !deck_nodes[index].collapsed;
+        VerticalLayout {
+            TopBar {
+                title: "pbAnki";
+                SyncButton {
+                    sync_state: root.sync_state;
+                    clicked => {
+                        if root.sync_state.has_error || root.sync_state.has_warning {
+                            root.settings_clicked();
+                        } else if !root.sync_state.is_syncing {
+                            root.sync_clicked();
+                        }
+                    }
                 }
-                deck_clicked => {
-                    deck_clicked(deck);
+
+                IconButton {
+                    icon: @image-url("../icons/settings.svg");
+                    clicked => {
+                        root.settings_clicked();
+                    }
+                }
+            }
+
+            header := HorizontalLayout {
+                height: Constants.home_header_height;
+                alignment: end;
+                // The stats button column of the rows.
+                padding-right: Constants.padding_standard - 10px + Constants.bar_height;
+                ColumnLabel {
+                    text: root.tr.count_new;
+                }
+
+                ColumnLabel {
+                    text: root.tr.count_learn;
+                }
+
+                ColumnLabel {
+                    text: root.tr.count_due;
+                }
+            }
+
+            VerticalLayout {
+                vertical-stretch: 1;
+                alignment: start;
+                for deck in root.page-rows: DeckRow {
+                    deck: deck;
+                    toggle => {
+                        root.deck_toggle(deck);
+                    }
+                    deck_clicked => {
+                        root.deck_clicked(deck);
+                    }
+                    stats_clicked => {
+                        root.stats_clicked(deck);
+                    }
+                }
+            }
+
+            Pager {
+                page: root.page;
+                page-count: root.page-count;
+                changed(delta) => {
+                    root.page_changed(delta);
                 }
             }
         }

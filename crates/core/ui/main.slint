@@ -1,9 +1,10 @@
 import { Theme } from "theme.slint";
 import { Constants, Translations } from "constants.slint";
-import { DeckNode, DeckTree, CardNode, EditField, SyncSettings, SyncState } from "types.slint";
+import { DeckNode, CardNode, DeviceSettings, EditField, HwKey, KeyHints, StatsView, SyncSettings, SyncState } from "types.slint";
 import { LearnScreen } from "screens/learn.slint";
 import { DeckSelectScreen } from "screens/deck_select.slint";
 import { SettingsScreen } from "screens/settings.slint";
+import { StatsScreen } from "screens/stats.slint";
 
 // Re-exported for Rust: `ui.global::<Theme>()`.
 export { Theme }
@@ -11,30 +12,54 @@ export { Theme }
 export component MainWindow inherits Window {
     preferred-width: 500px;
     preferred-height: 400px;
-    // Text without its own font-family (std-widgets CheckBox and Button labels)
-    // uses the runtime UI font, not a glyph set embedded at build time.
+    background: Theme.paper;
+    // Text without its own font-family (the std-widgets LineEdit of the
+    // desktop) uses the runtime UI font, not a glyph set embedded at build
+    // time.
     default-font-family: Constants.font_family_standard;
     in property <Translations> tr;
 
     in-out property <bool> learning;
     in-out property <CardNode> current_card;
-    // True from the moment a card job or sync starts until it finishes. Unlike
-    // `loading`, this is set immediately and is never deferred, so navigation
-    // can be guarded while a card job owns the collection or a sync is running.
+    // True from the moment a collection job (card, sync, stats) starts until
+    // it finishes. Unlike `loading`, this is set immediately and is never
+    // deferred, so navigation can be guarded while the job owns the
+    // collection.
     in-out property <bool> busy: false;
+    // The full-screen loader of a deck entry or of the stats screen.
     in-out property <bool> loading: false;
-    in-out property <string> loading_message: "Loading...";
+    // The loading icon of the study top bar, while a rating loads the next
+    // card.
+    in-out property <bool> card-loading: false;
 
-    in-out property <DeckTree> deck_tree;
+    // Home: one page of the deck list. Rust builds it (`frontend/decks.rs`)
+    // from the rows that fit. The bars and rows have fixed heights, so the
+    // list height is known from the window height (which is shorter with the
+    // system panel).
+    out property <int> deck-rows-per-page: max(1, Math.floor((root.height - 2 * Constants.bar_height - Constants.home_header_height) / Constants.deck_row_height));
+    in property <[DeckNode]> deck-page-rows;
+    in property <int> deck-page;
+    in property <int> deck-page-count: 1;
+
     in-out property <bool> settings_open;
+    // 0 is Sync, 1 is Device.
+    in-out property <int> settings-tab;
     in-out property <SyncSettings> sync_settings;
+    in-out property <DeviceSettings> device_settings;
     in-out property <SyncState> sync_state;
     in property <bool> native_keyboard: false;
+    in property <KeyHints> key-hints;
+
+    in-out property <bool> stats_open;
+    in-out property <int> stats-tab;
+    in property <StatsView> stats;
 
     // The card area of the study screen. Rust renders the card pages for this
-    // size (times the scale factor) before `LearnScreen` exists.
+    // size (times the scale factor) before `LearnScreen` exists. The area
+    // has the screen padding on all four sides; the top bar and the answer
+    // bar are edge to edge.
     out property <length> card-area-width: root.width - 2 * Constants.padding_standard;
-    out property <length> card-area-height: root.height - 2 * Constants.padding_standard - Constants.study_menu_height - Constants.study_buttons_height;
+    out property <length> card-area-height: root.height - 2 * Constants.padding_standard - Constants.bar_height - Constants.answer_bar_height;
     // Study page state, set from Rust when a new card arrives.
     in-out property <bool> show-answer;
     in-out property <int> study-page;
@@ -43,22 +68,38 @@ export component MainWindow inherits Window {
 
     callback update_deck_tree();
     callback deck_clicked(deck: DeckNode);
+    // The chevron of a deck row. Rust keeps the collapsed set.
+    callback deck_toggle(deck: DeckNode);
+    // The pager or a key: -1 or 1. 0 rebuilds the page (the rows per page
+    // changed).
+    callback deck_page_changed(delta: int);
+    callback stats_clicked(deck: DeckNode);
+    callback stats_back();
+    callback stats_month_changed(delta: int);
     callback rate(rating: int, deck: DeckNode);
+    callback study_key(key: HwKey);
     // The image of one card page. `version` only makes the binding run again.
     pure callback page-image(answer: bool, page: int, version: int) -> image;
     callback open_settings();
     callback save_settings(settings: SyncSettings);
+    callback save_device_settings(settings: DeviceSettings);
     callback sync_now();
     callback full_sync(upload: bool);
     callback settings_back();
     callback edit_field(field: EditField, current: string);
     callback session_ended();
 
+    changed deck-rows-per-page => {
+        deck_page_changed(0);
+    }
+
     if settings_open: SettingsScreen {
         width: 100%;
         height: 100%;
         tr: tr;
+        tab <=> root.settings-tab;
         settings <=> sync_settings;
+        device <=> device_settings;
         sync_state: sync_state;
         native-keyboard: native_keyboard;
         back => {
@@ -66,6 +107,9 @@ export component MainWindow inherits Window {
         }
         save(settings) => {
             save_settings(settings);
+        }
+        save-device(settings) => {
+            save_device_settings(settings);
         }
         sync-now => {
             sync_now();
@@ -78,50 +122,83 @@ export component MainWindow inherits Window {
         }
     }
 
-    if !settings_open: VerticalLayout {
-        padding: Constants.padding_standard;
-        if !learning: DeckSelectScreen {
-            tr: tr;
-            due_total: deck_tree.due_total;
-            deck_nodes: deck_tree.deck_nodes;
-            sync_state: sync_state;
-            deck_clicked(deck) => {
-                // `learning` is set from Rust once the loading screen or the
-                // card is ready, so the previous card is never shown.
-                if !busy {
-                    deck_clicked(deck);
-                }
-            }
-            settings_clicked => {
-                open_settings();
-            }
-            sync_clicked => {
-                sync_now();
+    if !settings_open && stats_open: StatsScreen {
+        width: 100%;
+        height: 100%;
+        stats: root.stats;
+        loading: root.loading;
+        tab <=> root.stats-tab;
+        back => {
+            stats_back();
+        }
+        month-changed(delta) => {
+            stats_month_changed(delta);
+        }
+    }
+
+    // The screens add their own padding: the bars are edge to edge.
+    if !settings_open && !stats_open && !learning: DeckSelectScreen {
+        width: 100%;
+        height: 100%;
+        tr: tr;
+        page-rows: deck-page-rows;
+        page: deck-page;
+        page-count: deck-page-count;
+        sync_state: sync_state;
+        deck_clicked(deck) => {
+            // `learning` is set from Rust once the loading screen or the
+            // card is ready, so the previous card is never shown.
+            if !busy {
+                deck_clicked(deck);
             }
         }
-        if learning: LearnScreen {
-            tr: tr;
-            card: current_card;
-            card-area-height: card-area-height;
-            show_answer <=> root.show-answer;
-            current-page <=> root.study-page;
-            page-version: page-version;
-            page-image(answer, page, version) => {
-                return root.page-image(answer, page, version);
+        deck_toggle(deck) => {
+            deck_toggle(deck);
+        }
+        stats_clicked(deck) => {
+            if !busy {
+                stats_clicked(deck);
             }
-            loading: loading;
-            loading_message: loading_message;
-            busy: busy;
-            home_clicked => {
-                if !busy {
-                    update_deck_tree();
-                    learning = false;
-                    session_ended();
-                }
+        }
+        page_changed(delta) => {
+            deck_page_changed(delta);
+        }
+        settings_clicked => {
+            open_settings();
+        }
+        sync_clicked => {
+            sync_now();
+        }
+    }
+
+    if !settings_open && !stats_open && learning: LearnScreen {
+        width: 100%;
+        height: 100%;
+        tr: tr;
+        card: current_card;
+        card-area-height: card-area-height;
+        show_answer <=> root.show-answer;
+        current-page <=> root.study-page;
+        page-version: page-version;
+        page-image(answer, page, version) => {
+            return root.page-image(answer, page, version);
+        }
+        loading: loading;
+        card-loading: card-loading;
+        busy: busy;
+        key-hints: key-hints;
+        home_clicked => {
+            if !busy {
+                update_deck_tree();
+                learning = false;
+                session_ended();
             }
-            rate(rating) => {
-                rate(rating, current_card.deck);
-            }
+        }
+        rate(rating) => {
+            rate(rating, current_card.deck);
+        }
+        study-key(key) => {
+            study_key(key);
         }
     }
 }

@@ -1,0 +1,298 @@
+import { Theme } from "../theme.slint";
+import { LineEdit } from "std-widgets.slint";
+import { Constants, Translations } from "../constants.slint";
+import { EditField, SyncSettings, SyncState } from "../types.slint";
+import { PlainButton } from "../components/plain_button.slint";
+import { Toggle } from "../components/toggle.slint";
+
+component SettingsField {
+    in property <string> label;
+    in-out property <string> value;
+    in property <bool> password;
+    in property <bool> native-keyboard;
+    in property <bool> enabled: true;
+
+    callback changed(string);
+    callback edit-requested(string);
+
+    VerticalLayout {
+        spacing: Constants.spacing_xs;
+
+        Text {
+            text: root.label;
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_caption;
+            color: Theme.muted;
+        }
+
+        // The device edits the value with the native keyboard.
+        if root.native-keyboard: Rectangle {
+            height: 36px;
+            border-width: Constants.hairline;
+            border-color: Theme.line;
+            background: Theme.field-background;
+
+            HorizontalLayout {
+                padding-left: Constants.spacing_s;
+                padding-right: Constants.spacing_s;
+                Text {
+                    text: root.password && root.value != "" ? "********" : root.value;
+                    font-family: Constants.font_family_standard;
+                    font-size: Constants.font_size_content;
+                    vertical-alignment: center;
+                    overflow: TextOverflow.elide;
+                    color: Theme.text;
+                }
+            }
+
+            TouchArea {
+                enabled: root.enabled;
+                clicked => {
+                    root.edit-requested(root.value);
+                }
+            }
+        }
+
+        // The desktop has no native keyboard.
+        if !root.native-keyboard: LineEdit {
+            height: 36px;
+            text: root.value;
+            input-type: root.password ? InputType.password : InputType.text;
+            enabled: root.enabled;
+            font-size: Constants.font_size_subcontent;
+            edited(text) => {
+                root.value = text;
+                root.changed(text);
+            }
+        }
+    }
+}
+
+// The Sync tab. A fixed layout: nothing scrolls. The status line and the
+// buttons are at the bottom. When a full sync is required, the notice, the
+// confirm toggle, and Upload and Download replace the form (both do not fit
+// on a 357x482 window), until a full sync or another sync result.
+export component SettingsSync {
+    in property <Translations> tr;
+    in-out property <SyncSettings> settings;
+    in property <SyncState> sync_state;
+    in property <bool> native-keyboard: false;
+    property <bool> confirm-full-sync: false;
+    property <bool> full-sync-shown: sync_state.full_sync_required;
+
+    callback save(SyncSettings);
+    callback sync-now();
+    callback full-sync(upload: bool);
+    callback edit-field(field: EditField, current: string);
+
+    changed sync_state => {
+        confirm-full-sync = false;
+    }
+
+    VerticalLayout {
+        padding-left: Constants.padding_standard;
+        padding-right: Constants.padding_standard;
+        padding-top: Constants.spacing_m;
+        padding-bottom: Constants.spacing_m;
+        spacing: Constants.spacing_s;
+
+        if !root.full-sync-shown: VerticalLayout {
+            spacing: Constants.spacing_s;
+            SettingsField {
+                label: tr.server_url;
+                value: settings.endpoint;
+                native-keyboard: root.native-keyboard;
+                enabled: !sync_state.is_syncing;
+                changed(value) => {
+                    settings.endpoint = value;
+                }
+                edit-requested(current) => {
+                    root.edit-field(EditField.endpoint, current);
+                }
+            }
+
+            SettingsField {
+                label: tr.email;
+                value: settings.username;
+                native-keyboard: root.native-keyboard;
+                enabled: !sync_state.is_syncing;
+                changed(value) => {
+                    settings.username = value;
+                }
+                edit-requested(current) => {
+                    root.edit-field(EditField.username, current);
+                }
+            }
+
+            SettingsField {
+                label: tr.password;
+                value: settings.password;
+                password: true;
+                native-keyboard: root.native-keyboard;
+                enabled: !sync_state.is_syncing;
+                changed(value) => {
+                    settings.password = value;
+                }
+                edit-requested(current) => {
+                    root.edit-field(EditField.password, current);
+                }
+            }
+
+            VerticalLayout {
+                Toggle {
+                    height: 40px;
+                    separator: true;
+                    text: tr.auto_sync;
+                    checked: settings.auto_sync;
+                    enabled: !sync_state.is_syncing;
+                    toggled => {
+                        settings.auto_sync = self.checked;
+                    }
+                }
+
+                Toggle {
+                    height: 40px;
+                    separator: true;
+                    text: tr.sync_on_exit;
+                    checked: settings.sync_on_exit;
+                    enabled: !sync_state.is_syncing;
+                    toggled => {
+                        settings.sync_on_exit = self.checked;
+                    }
+                }
+
+                Toggle {
+                    height: 40px;
+                    separator: false;
+                    text: tr.sync_media;
+                    checked: settings.sync_media;
+                    enabled: !sync_state.is_syncing;
+                    toggled => {
+                        settings.sync_media = self.checked;
+                    }
+                }
+            }
+        }
+
+        if root.full-sync-shown: VerticalLayout {
+            spacing: Constants.spacing_s;
+            HorizontalLayout {
+                spacing: Constants.spacing_s;
+                VerticalLayout {
+                    alignment: center;
+                    Image {
+                        width: Constants.icon_size;
+                        height: Constants.icon_size;
+                        source: @image-url("../icons/error.svg");
+                    }
+                }
+
+                Text {
+                    horizontal-stretch: 1;
+                    text: tr.full_sync_title;
+                    font-family: Constants.font_family_standard;
+                    font-size: Constants.font_size_content;
+                    font-weight: 700;
+                    color: Theme.status-error;
+                    vertical-alignment: center;
+                }
+            }
+
+            Text {
+                text: tr.full_sync_required;
+                font-family: Constants.font_family_standard;
+                font-size: Constants.font_size_content;
+                color: Theme.ink;
+                wrap: TextWrap.word-wrap;
+            }
+
+            Toggle {
+                height: 56px;
+                text: tr.confirm_full_sync;
+                checked: root.confirm-full-sync;
+                enabled: !sync_state.is_syncing;
+                toggled => {
+                    root.confirm-full-sync = self.checked;
+                }
+            }
+        }
+
+        // Pushes the status line and the buttons to the bottom.
+        Rectangle {
+            vertical-stretch: 1;
+        }
+
+        // The status line: an icon for the result and two lines of text.
+        HorizontalLayout {
+            height: 32px;
+            spacing: Constants.spacing_s;
+            if sync_state.done || sync_state.has_error || sync_state.has_warning: VerticalLayout {
+                alignment: center;
+                Image {
+                    width: 16px;
+                    height: 16px;
+                    source: sync_state.done && !sync_state.has_warning ? @image-url("../icons/done.svg") : @image-url("../icons/error.svg");
+                }
+            }
+            Text {
+                horizontal-stretch: 1;
+                text: sync_state.status_message;
+                font-family: Constants.font_family_standard;
+                font-size: Constants.font_size_caption;
+                color: sync_state.has_error ? Theme.status-error : (sync_state.has_warning ? Theme.status-warning : Theme.ink);
+                font-weight: sync_state.has_error ? Theme.status-error-weight : 400;
+                vertical-alignment: center;
+                wrap: TextWrap.word-wrap;
+                overflow: elide;
+            }
+        }
+
+        if !root.full-sync-shown: HorizontalLayout {
+            spacing: Constants.spacing_m;
+            PlainButton {
+                horizontal-stretch: 1;
+                outlined: true;
+                text: tr.save;
+                enabled: !sync_state.is_syncing;
+                clicked => {
+                    root.save(root.settings);
+                }
+            }
+
+            PlainButton {
+                horizontal-stretch: 1;
+                primary: true;
+                text: tr.sync_now;
+                enabled: !sync_state.is_syncing;
+                clicked => {
+                    root.sync-now();
+                }
+            }
+        }
+
+        if root.full-sync-shown: HorizontalLayout {
+            spacing: Constants.spacing_m;
+            if sync_state.can_upload: PlainButton {
+                horizontal-stretch: 1;
+                outlined: true;
+                text: tr.upload;
+                enabled: root.confirm-full-sync && !sync_state.is_syncing;
+                clicked => {
+                    root.confirm-full-sync = false;
+                    root.full-sync(true);
+                }
+            }
+
+            if sync_state.can_download: PlainButton {
+                horizontal-stretch: 1;
+                outlined: true;
+                text: tr.download;
+                enabled: root.confirm-full-sync && !sync_state.is_syncing;
+                clicked => {
+                    root.confirm-full-sync = false;
+                    root.full-sync(false);
+                }
+            }
+        }
+    }
+}

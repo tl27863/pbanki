@@ -1,0 +1,65 @@
+import { Theme } from "../theme.slint";
+import { Constants } from "../constants.slint";
+import { IconButton } from "icon_button.slint";
+
+component Tab {
+    in property <string> text;
+    in property <bool> current;
+    callback clicked <=> touch.clicked;
+    height: Constants.bar_height;
+    min-width: label.min-width + 2 * Constants.spacing_m;
+
+    label := Text {
+        text: root.text;
+        font-family: Constants.font_family_standard;
+        font-size: Constants.font_size_content;
+        font-weight: root.current ? 700 : 400;
+        color: Theme.ink;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+
+    if root.current: Rectangle {
+        x: Constants.spacing_m;
+        y: parent.height - self.height;
+        width: parent.width - 2 * Constants.spacing_m;
+        height: 3px;
+        background: Theme.ink;
+    }
+
+    touch := TouchArea { }
+}
+
+// Back button and tabs. The current tab is bold with a 3 px underline.
+export component TabHeader {
+    in property <[string]> tabs;
+    in-out property <int> current;
+    callback back();
+    height: Constants.bar_height;
+
+    HorizontalLayout {
+        padding-left: Constants.padding_standard - 10px;
+        padding-right: Constants.padding_standard - Constants.spacing_m;
+        alignment: start;
+        IconButton {
+            icon: @image-url("../icons/back.svg");
+            clicked => {
+                root.back();
+            }
+        }
+
+        for tab[index] in root.tabs: Tab {
+            text: tab;
+            current: index == root.current;
+            clicked => {
+                root.current = index;
+            }
+        }
+    }
+
+    Rectangle {
+        y: parent.height - self.height;
+        height: Constants.hairline;
+        background: Theme.line;
+    }
+}

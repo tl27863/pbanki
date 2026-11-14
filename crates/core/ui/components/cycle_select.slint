@@ -1,0 +1,43 @@
+import { Theme } from "../theme.slint";
+import { Constants } from "../constants.slint";
+
+// One of a list of labels with a chevron. A tap selects the next label and
+// wraps at the end: there is no popup list, which would be two more panel
+// updates.
+export component CycleSelect {
+    in property <[string]> labels;
+    in-out property <int> index;
+    callback changed(index: int);
+    height: Constants.bar_height;
+
+    HorizontalLayout {
+        spacing: Constants.spacing_xs;
+        Text {
+            horizontal-stretch: 1;
+            text: root.index >= 0 && root.index < root.labels.length ? root.labels[root.index] : "";
+            font-family: Constants.font_family_standard;
+            font-size: Constants.font_size_content;
+            color: Theme.ink;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 20px;
+                height: 20px;
+                source: @image-url("../icons/chevron_down.svg");
+            }
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            if root.labels.length > 0 {
+                root.index = Math.mod(root.index + 1, root.labels.length);
+                root.changed(root.index);
+            }
+        }
+    }
+}

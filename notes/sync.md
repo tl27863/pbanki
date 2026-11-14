@@ -4,22 +4,26 @@
 
 - `crates/core/src/sync/` does normal merge, full upload, full download, and media sync.
 - Full sync and card loads both take the collection out of `LearnSession.collection` (an `Option`) for a short time. Then they open or put back the collection. Both use `LearnSession.busy`.
-- Sync blocks the UI thread. There is no progress or abort. Add progress together with sync off the UI thread.
+- Sync runs on a worker thread as a collection job (`spawn_collection_job` in `frontend/card_jobs.rs`, see `card-loading.md`). The UI thread stays free, so the sync icon can animate. There is no progress or abort.
+- `sync_now` and `full_sync` get the collection (`&mut Option<Collection>`), a copy of the config, and the `SyncManager` (an `Arc` in `LearnSession`). They do not save the config. They return `SyncOutcome { result, changes }`; the UI thread calls `apply_config` to write a new token or a moved endpoint and save.
+- While a sync runs, `busy` is true: the app ignores deck entry, Settings open and back, and Save in Settings.
+- If the worker panics, the result is an error ("Sync stopped unexpectedly") and the collection is lost until a restart.
 - `sync_on_exit` means a sync after you leave a study session (LearnScreen to Home). It does not mean a sync when the application stops.
-- The sync settings are in `crates/core/ui/screens/settings.slint`. The gear on Home opens them. The reload icon starts a sync.
+- The sync settings are in `crates/core/ui/screens/settings_sync.slint` (Settings, Sync tab). The settings button on Home opens them. The sync button on Home starts a sync and is also the indicator: it steps through two frames while the sync runs, then shows the done icon or the error icon. Home has no status text. The message is on the Sync tab, and a tap on the error icon opens it. A media warning shows the error icon too. A finished result ends at the next screen change (deck entry, Home, Stats, Settings, or back; `end_finished_sync` in `frontend/sync.rs`, `SyncState::after_screen_change`): Home shows the sync icon again, and the Sync tab does not show "Sync complete" or "Settings saved" from another screen. A running sync, an error, a media warning, and a required full sync stay until the next sync.
+- When a full sync is required, the Sync tab shows the notice, the confirm toggle, and Upload and Download in place of the form (both do not fit on a 357×482 window), until a full sync or another sync result.
 - `[ankiweb].endpoint` is blank for AnkiWeb. `sync_media` is true by default.
 - Build `SyncState` through its constructors in `frontend/models.rs`. The lint rule `pbanki-sync-state-constructor` checks this.
 
 ## Sync hooks
 
-`pbanki_core::frontend` has `FrontendHooks { sync: SyncHooks, full_present }`. The frontend passes it to `app::start`.
+`pbanki_core::frontend` has `FrontendHooks { sync: SyncHooks, full_present, full_refresh, page_format }`. The frontend passes it to `app::start`.
 
 `SyncHooks { before_sync, after_sync }` runs for each sync path: manual, full upload, full download, auto-sync at startup, and `sync_on_exit`.
 
-- `before_sync` runs on the UI thread. It must be fast and idempotent.
+- `before_sync` and `after_sync` run on the UI thread. The sync runs on the worker between them. `before_sync` must be fast and idempotent.
 - `before_sync` can show a platform prompt (for example Wi-Fi setup). It must not block for an unlimited time by itself.
 - If `before_sync` fails, the app sets a `SyncState` error and does not sync.
-- `after_sync` runs exactly once if `before_sync` returned `Ok`. This includes a failed sync and a sync that panics.
+- `after_sync` runs exactly once if `before_sync` returned `Ok`. This includes a failed sync and a worker that panics: the `SyncGuard` lives in the finish closure of the job, and the runner delivers a disconnected channel after a panic.
 - `after_sync` never runs after a failed `before_sync`.
 - The desktop frontend passes no-op hooks.
 
@@ -32,7 +36,7 @@
 1. It checks `QueryNetwork() & NET_CONNECTED`.
 2. If there is no connection, it checks `QueryNetwork() & NET_WIFIREADY`. If the radio is off, it starts the radio with `WiFiPower(1)` and records that pbAnki powered it.
 3. Then it shows the system `NetConnect(NULL)` dialog. The user can enable and select Wi-Fi without leaving the app.
-4. After the dialog, it calls `inkview_slint::request_full_present()`. The dialog drew over the frame, and InkView does not always send `Foreground` after it (no event when the radio was already on). The request is consumed after the sync callback, so the present shows the sync result.
+4. After the dialog, it calls `inkview_slint::request_full_present()`. The dialog drew over the frame, and InkView does not always send `Foreground` after it (no event when the radio was already on). The request is consumed when the timer callback that started the sync returns, so the present shows the syncing state. The sync result arrives later with an explicit redraw.
 5. If the connection fails and pbAnki powered the radio, it powers the radio off again.
 
 Failures give actionable messages. They do not open the sync settings.
@@ -75,6 +79,7 @@ Each sync logs these lines (see `logging.md`):
 
 - Covered: login and the saved token, a wrong password, a token for another endpoint, full upload and download (with the backup), normal sync both ways, media, and the `308` endpoint move (a small redirector thread).
 - Tests are plain `#[test]`: `sync_now` makes its own runtime. The server runs on its own thread.
+- `frontend/sync.rs` tests the guard: prepare failure, panic on the UI thread, a worker panic, and a worker result (the last two through the job runner, without an event loop).
 - Each test config sets `Config.path` to a temp dir. The default path is the device path.
 - `dev_server_roundtrip` (ignored) runs against the dev sync server. It checks anki `main` against the pinned server image. It **replaces the account's collection** on that server:
 

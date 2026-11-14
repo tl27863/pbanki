@@ -1,0 +1,27 @@
+id: pbanki-no-scroll-widgets
+valid:
+  - |
+    component A {
+        VerticalLayout {
+            for row in rows: Row { }
+        }
+    }
+  - |
+    component A {
+        Pager { page: 0; }
+    }
+invalid:
+  - |
+    component A {
+        ListView {
+            for row in rows: Row { }
+        }
+    }
+  - |
+    component A {
+        if x: ScrollView { Text { } }
+    }
+  - |
+    component A {
+        f := Flickable { viewport-height: 100px; }
+    }

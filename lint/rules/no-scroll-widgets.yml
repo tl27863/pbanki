@@ -1,0 +1,16 @@
+id: pbanki-no-scroll-widgets
+language: slint
+severity: error
+message: The UI does not scroll. Paginate instead of using ListView, ScrollView, or Flickable.
+note: |
+  Scrolling on e-ink is a series of slow panel updates. Lists show a fixed
+  page of rows with a `Pager` (see `deck_select.slint` and
+  `frontend/decks.rs`), and the other screens use fixed layouts that fit the
+  smallest window (357x482).
+files:
+  - crates/core/ui/**/*.slint
+rule:
+  kind: component
+  has:
+    field: type
+    regex: ^(ListView|ScrollView|Flickable)$
