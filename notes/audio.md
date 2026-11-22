@@ -40,7 +40,7 @@ Read from the bindings in `../inkview-rs` and from `inkview.h`, `iaudio_engine.h
 
 - `AudioPlayer` (`mod.rs`) is a cloneable handle to the `pbanki-audio` thread. Its thread starts on the first `play`, so a device that never plays never starts it. `stop` and `output_changed` are safe from any thread (the InkView event handler calls them).
 - Commands: `play(files, devices, gain, token)` replaces whatever plays; `stop` drops the queue; `output_changed` turns audio on again after failures. The thread reports `AudioEvent::{Started, Finished, Failed { disabled }}` with the token.
-- `decode.rs`: symphonia 0.6 (`mp3`, `aac`, `isomp4`, `ogg`, `vorbis`, `wav`, `pcm`, `flac`, ID3 tags). Mono goes to both sides; of more channels the first two are kept. A Catmull-Rom resampler converts to 48 kHz (no extra crate; enough for speech). The gain is applied, then the samples become i16. A file that fails to open or decode is skipped; the next one plays.
+- `decode.rs`: symphonia 0.6 (`mp3`, `aac`, `isomp4`, `ogg`, `vorbis`, `wav`, `pcm`, `flac`, ID3 tags). Mono goes to both sides; of more channels the first two are kept. A Catmull-Rom resampler converts to 48 kHz (no extra crate; enough for speech; see "Resampler"). The gain is applied, then the samples become i16. A file that fails to open or decode is skipped; the next one plays.
 - `sink.rs`: `libasound.so.2` through `libloading`. Opened with `SND_PCM_NONBLOCK`; S16_LE, 2 ch, 48000 Hz exactly, after checking the reported ranges. `EPIPE` (underrun) → `snd_pcm_prepare`. `drop_queue` is `snd_pcm_drop` + `snd_pcm_prepare`.
 - Thread loop: about 1 s decoded ahead in memory; at most 200 ms queued in the PCM (a large desktop buffer then behaves like the device); it wakes every 10 ms. A clip has ended when the PCM queue is empty, or 250 ms after it should have drained (some PCMs never report 0). The PCM closes after 2 s idle.
 - Failures:
@@ -93,6 +93,26 @@ InkView events (handled in the `iv_main` closure, before the event goes to the b
 - With the headset off the output is `none`: the PB710 has no built-in speaker (`device_audio() = 5`, loopback without speaker).
 - The Home key during a clip stops it (`Hide` / `Background`).
 - Volume: the default was lowered from 6 to 5 after listening on the device.
+
+## Resampler
+
+`decode.rs` `Resampler`: Catmull-Rom interpolation to 48 kHz, written to S16 with the gain applied. No crate.
+
+- Mono is interpolated once and written to both sides. Of more channels the first two are kept.
+- The position is an exact fraction (`idx + num / den`, the rates divided by their gcd), not an f64.
+- The four weights are computed once per output frame for both channels and include the gain.
+- `to_i16` adds ±0.5 and truncates with `as`. `f32::round` is a libm `roundf` call on armv7, because there is no VRINTA before ARMv8. The result is the same.
+- The output is the direct Catmull-Rom formula within 1 LSB (`output_matches_the_catmull_rom_formula`).
+
+Measured on desktop (2026-11-22, with a bench that was deleted later): about 2.3× faster than the first version for mono and 1.7× for stereo, with the same i16 output. The absolute cost was already low, so the device gain is small.
+
+There is no anti-imaging filter. A 4 kHz tone from a 22.05 kHz file leaves an image at 18.05 kHz about 33 dB below it. The response is about −3 dB at 0.4 × the input rate. For speech the images sit at 18–20 kHz, and the Bluetooth codec cuts them anyway.
+
+rubato 5.1 was evaluated and not adopted:
+- The polynomial modes have no better image rejection.
+- With the automatic cutoff, sinc filters shorter than 128 taps cut into the passband (64 taps: −7.7 dB at 0.4 fs). The 128-tap filter costs about 7× as much, plus 0.5 ms setup and 195 KB for each clip.
+- `Fft` is clean and about as fast on x86. But it adds about 256 KB to the binary (realfft, rustfft), and it adds 3–9 ms of delay to flush.
+- rubato's SIMD runs only on x86_64 and aarch64, so the PB710 would run the scalar code.
 
 ## Open device checks
 

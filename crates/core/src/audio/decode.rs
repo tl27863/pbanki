@@ -18,6 +18,9 @@ use symphonia::core::meta::MetadataOptions;
 
 use super::{CHANNELS, RATE};
 
+// The resampler writes interleaved stereo.
+const _: () = assert!(CHANNELS == 2);
+
 /// Decode errors in a row before a file is given up.
 const MAX_DECODE_ERRORS: u32 = 8;
 
@@ -30,8 +33,6 @@ pub(crate) struct ClipDecoder {
     resampler: Option<Resampler>,
     /// Interleaved samples of the last packet, in the file's layout.
     scratch: Vec<f32>,
-    /// Stereo frames of the last packet, before resampling.
-    frames: Vec<[f32; 2]>,
     errors: u32,
     finished: bool,
 }
@@ -72,7 +73,6 @@ impl ClipDecoder {
             gain,
             resampler: None,
             scratch: Vec::new(),
-            frames: Vec::new(),
             errors: 0,
             finished: false,
         })
@@ -121,18 +121,20 @@ impl ClipDecoder {
             }
             self.scratch.resize(decoded.samples_interleaved(), 0.0);
             decoded.copy_to_slice_interleaved(&mut self.scratch);
-            to_stereo(&self.scratch, channels, &mut self.frames);
 
-            if self.resampler.as_ref().is_none_or(|r| r.in_rate != rate) {
-                // A rate change inside a file is rare; the old tail is lost.
+            if self
+                .resampler
+                .as_ref()
+                .is_none_or(|r| r.in_rate != rate || r.channels != channels)
+            {
+                // A format change inside a file is rare; the old tail is lost.
                 if let Some(old) = self.resampler.as_mut() {
-                    old.flush(|frame| push_frame(out, frame, self.gain));
+                    old.flush(out);
                 }
-                self.resampler = Some(Resampler::new(rate, RATE));
+                self.resampler = Some(Resampler::new(rate, RATE, channels, self.gain));
             }
-            let gain = self.gain;
             if let Some(resampler) = self.resampler.as_mut() {
-                resampler.process(&self.frames, |frame| push_frame(out, frame, gain));
+                resampler.process(&self.scratch, out);
             }
             return Ok(true);
         }
@@ -140,209 +142,350 @@ impl ClipDecoder {
 
     fn finish(&mut self, out: &mut VecDeque<i16>) {
         self.finished = true;
-        let gain = self.gain;
         if let Some(resampler) = self.resampler.as_mut() {
-            resampler.flush(|frame| push_frame(out, frame, gain));
+            resampler.flush(out);
         }
     }
 }
 
-/// The left and right channel of each frame. Mono is copied to both sides; of
-/// more channels only the first two (front left and right) are kept.
-fn to_stereo(interleaved: &[f32], channels: usize, out: &mut Vec<[f32; 2]>) {
-    out.clear();
-    out.extend(interleaved.chunks_exact(channels).map(|frame| {
-        if channels == 1 {
-            [frame[0], frame[0]]
-        } else {
-            [frame[0], frame[1]]
-        }
-    }));
-}
-
-fn push_frame(out: &mut VecDeque<i16>, frame: [f32; 2], gain: f32) {
-    debug_assert_eq!(CHANNELS, 2);
-    for sample in frame {
-        out.push_back(to_i16(sample * gain));
-    }
-}
-
+/// Converts a sample to S16, rounding half away from zero like `f32::round`.
+/// `round` itself is a libm `roundf` call on armv7 (no VRINTA before ARMv8);
+/// adding ±0.5 and truncating with `as` is not.
 fn to_i16(sample: f32) -> i16 {
-    (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16
+    let v = sample.clamp(-1.0, 1.0) * i16::MAX as f32;
+    (v + if v >= 0.0 { 0.5 } else { -0.5 }) as i16
 }
 
-/// Streaming sample-rate conversion with cubic (Catmull-Rom) interpolation.
+/// The Catmull-Rom weights of the four points around `t` (0..1 between the
+/// second and the third point).
+fn weights(t: f32) -> [f32; 4] {
+    let t2 = t * t;
+    let t3 = t2 * t;
+    [
+        -0.5 * t3 + t2 - 0.5 * t,
+        1.5 * t3 - 2.5 * t2 + 1.0,
+        -1.5 * t3 + 2.0 * t2 + 0.5 * t,
+        0.5 * t3 - 0.5 * t2,
+    ]
+}
+
+/// Streaming conversion of interleaved f32 in the file's layout to 48 kHz
+/// interleaved stereo S16, with cubic (Catmull-Rom) interpolation and the
+/// gain applied.
 ///
 /// Card audio is mostly short speech at 22.05, 24, 44.1 or 48 kHz. Cubic
-/// interpolation is enough for that and costs a few multiplications per
-/// sample. A rate equal to the output rate passes through unchanged.
+/// interpolation is enough for that (notes/audio.md, "Resampler"). Mono is
+/// interpolated once and written to both sides; of more channels the first
+/// two (front left and right) are kept. A rate equal to the output rate
+/// passes through unchanged.
 pub(crate) struct Resampler {
     in_rate: u32,
-    /// Input frames per output frame.
-    step: f64,
-    /// Position of the next output frame in `buf`, in input frames.
-    pos: f64,
-    /// Input frames not yet consumed. `buf[0]` is the frame before `pos`.
-    buf: Vec<[f32; 2]>,
+    /// Channels of the input.
+    channels: usize,
+    /// Channels kept in `buf`: 1 for mono input, else 2.
+    kept: usize,
+    gain: f32,
+    passthrough: bool,
+    /// Input frames per output frame: `step_int + step_num / den`, exact.
+    step_int: usize,
+    step_num: u32,
+    den: u32,
+    /// Position of the next output frame: `idx + num / den`, in frames of
+    /// `buf`.
+    idx: usize,
+    num: u32,
+    /// Input frames not yet consumed, `kept` samples each. Frame 0 is the one
+    /// before the position.
+    buf: Vec<f32>,
 }
 
 impl Resampler {
-    pub fn new(in_rate: u32, out_rate: u32) -> Self {
+    pub fn new(in_rate: u32, out_rate: u32, channels: usize, gain: f32) -> Self {
+        let g = gcd(in_rate, out_rate);
+        let (num, den) = (in_rate / g, out_rate / g);
+        let kept = if channels == 1 { 1 } else { 2 };
         Self {
             in_rate,
-            step: f64::from(in_rate) / f64::from(out_rate),
-            pos: 1.0,
+            channels,
+            kept,
+            gain,
+            passthrough: in_rate == out_rate,
+            step_int: (num / den) as usize,
+            step_num: num % den,
+            den,
+            idx: 1,
+            num: 0,
             // One frame of silence before the first input frame.
-            buf: vec![[0.0; 2]],
+            buf: vec![0.0; kept],
         }
     }
 
-    fn passthrough(&self) -> bool {
-        self.step == 1.0
-    }
-
-    pub fn process(&mut self, input: &[[f32; 2]], mut emit: impl FnMut([f32; 2])) {
-        if self.passthrough() {
-            input.iter().copied().for_each(emit);
+    /// Converts `interleaved` (whole frames of `channels` samples) and
+    /// appends the result to `out`.
+    pub fn process(&mut self, interleaved: &[f32], out: &mut VecDeque<i16>) {
+        let channels = self.channels;
+        if self.passthrough {
+            let gain = self.gain;
+            out.reserve(interleaved.len() / channels * 2);
+            for frame in interleaved.chunks_exact(channels) {
+                let left = to_i16(frame[0] * gain);
+                out.push_back(left);
+                out.push_back(if channels == 1 {
+                    left
+                } else {
+                    to_i16(frame[1] * gain)
+                });
+            }
             return;
         }
-        self.buf.extend_from_slice(input);
-        // Each output frame needs the frames at floor(pos) - 1 ..= floor(pos) + 2.
-        loop {
-            let index = self.pos as usize;
-            if index + 2 >= self.buf.len() {
-                break;
-            }
-            let t = (self.pos - index as f64) as f32;
-            let p = [
-                self.buf[index - 1],
-                self.buf[index],
-                self.buf[index + 1],
-                self.buf[index + 2],
-            ];
-            emit([
-                catmull_rom(p[0][0], p[1][0], p[2][0], p[3][0], t),
-                catmull_rom(p[0][1], p[1][1], p[2][1], p[3][1], t),
-            ]);
-            self.pos += self.step;
+        if channels == 1 {
+            self.buf.extend_from_slice(interleaved);
+            self.run::<1>(usize::MAX, out);
+        } else {
+            self.buf.extend(
+                interleaved
+                    .chunks_exact(channels)
+                    .flat_map(|frame| [frame[0], frame[1]]),
+            );
+            self.run::<2>(usize::MAX, out);
         }
-        // Keep the frame before `pos` and everything after it.
-        let keep_from = (self.pos as usize).saturating_sub(1);
-        self.buf.drain(..keep_from);
-        self.pos -= keep_from as f64;
     }
 
     /// Emits the frames still held back, as if two silent frames followed.
-    pub fn flush(&mut self, emit: impl FnMut([f32; 2])) {
-        if self.passthrough() {
+    pub fn flush(&mut self, out: &mut VecDeque<i16>) {
+        if self.passthrough {
             return;
         }
-        // Only the frames that fall inside the real input: positions before
-        // the end of `buf` as it is now (`process` drains it afterwards).
-        let input_end = self.buf.len() as f64;
-        let step = self.step;
-        let mut pos = self.pos;
-        let mut emit = emit;
-        self.process(&[[0.0; 2], [0.0; 2]], |frame| {
-            if pos < input_end {
-                emit(frame);
+        // Only the frames that fall inside the real input.
+        let input_end = self.buf.len() / self.kept;
+        self.buf.extend(std::iter::repeat_n(0.0, 2 * self.kept));
+        if self.kept == 1 {
+            self.run::<1>(input_end, out);
+        } else {
+            self.run::<2>(input_end, out);
+        }
+    }
+
+    /// Emits every output frame whose four points are in `buf`, but only
+    /// those before frame `limit`. `C` is `self.kept`.
+    fn run<const C: usize>(&mut self, limit: usize, out: &mut VecDeque<i16>) {
+        let frames = self.buf.len() / C;
+        let inv_den = 1.0 / self.den as f32;
+        // Each output frame needs the frames idx - 1 ..= idx + 2.
+        while self.idx + 2 < frames {
+            if self.idx < limit {
+                let w = weights(self.num as f32 * inv_den).map(|w| w * self.gain);
+                let p = &self.buf[(self.idx - 1) * C..(self.idx + 3) * C];
+                let left = to_i16(w[0] * p[0] + w[1] * p[C] + w[2] * p[2 * C] + w[3] * p[3 * C]);
+                let right = if C == 1 {
+                    left
+                } else {
+                    to_i16(
+                        w[0] * p[1] + w[1] * p[C + 1] + w[2] * p[2 * C + 1] + w[3] * p[3 * C + 1],
+                    )
+                };
+                out.push_back(left);
+                out.push_back(right);
             }
-            pos += step;
-        });
+            self.idx += self.step_int;
+            self.num += self.step_num;
+            if self.num >= self.den {
+                self.num -= self.den;
+                self.idx += 1;
+            }
+        }
+        // Keep the frame before the position and everything after it.
+        let keep_from = self.idx - 1;
+        self.buf.drain(..keep_from * C);
+        self.idx -= keep_from;
     }
 }
 
-fn catmull_rom(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
-    let a = -0.5 * p0 + 1.5 * p1 - 1.5 * p2 + 0.5 * p3;
-    let b = p0 - 2.5 * p1 + 2.0 * p2 - 0.5 * p3;
-    let c = -0.5 * p0 + 0.5 * p2;
-    ((a * t + b) * t + c) * t + p1
+fn gcd(mut a: u32, mut b: u32) -> u32 {
+    while b != 0 {
+        (a, b) = (b, a % b);
+    }
+    a
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn sine(rate: u32, hz: f32, frames: usize) -> Vec<[f32; 2]> {
+    fn sine(rate: u32, hz: f32, frames: usize) -> Vec<f32> {
         (0..frames)
-            .map(|i| {
-                let v = (i as f32 * hz * std::f32::consts::TAU / rate as f32).sin() * 0.5;
-                [v, -v]
-            })
+            .map(|i| (i as f32 * hz * std::f32::consts::TAU / rate as f32).sin() * 0.5)
             .collect()
     }
 
-    fn resample_all(input: &[[f32; 2]], in_rate: u32, chunk: usize) -> Vec<[f32; 2]> {
-        let mut resampler = Resampler::new(in_rate, RATE);
-        let mut out = Vec::new();
-        for part in input.chunks(chunk) {
-            resampler.process(part, |frame| out.push(frame));
+    /// Interleaved stereo with `-v` on the right.
+    fn stereo(mono: &[f32]) -> Vec<f32> {
+        mono.iter().flat_map(|&v| [v, -v]).collect()
+    }
+
+    fn resample_all(input: &[f32], channels: usize, in_rate: u32, chunk: usize) -> Vec<i16> {
+        let mut resampler = Resampler::new(in_rate, RATE, channels, 1.0);
+        let mut out = VecDeque::new();
+        for part in input.chunks(chunk * channels) {
+            resampler.process(part, &mut out);
         }
-        resampler.flush(|frame| out.push(frame));
+        resampler.flush(&mut out);
+        out.into()
+    }
+
+    /// The direct formula: output frame k at input position k * step, with
+    /// silence before and after the input, and only positions inside it.
+    fn reference(input: &[f32], in_rate: u32) -> Vec<f32> {
+        let at = |i: isize| {
+            usize::try_from(i)
+                .ok()
+                .and_then(|i| input.get(i))
+                .copied()
+                .unwrap_or(0.0)
+        };
+        let step = f64::from(in_rate) / f64::from(RATE);
+        let mut out = Vec::new();
+        let mut k = 0u32;
+        loop {
+            let pos = f64::from(k) * step;
+            if pos >= input.len() as f64 {
+                break;
+            }
+            let i = pos as isize;
+            let t = (pos - i as f64) as f32;
+            let (p0, p1, p2, p3) = (at(i - 1), at(i), at(i + 1), at(i + 2));
+            let a = -0.5 * p0 + 1.5 * p1 - 1.5 * p2 + 0.5 * p3;
+            let b = p0 - 2.5 * p1 + 2.0 * p2 - 0.5 * p3;
+            let c = -0.5 * p0 + 0.5 * p2;
+            out.push(((a * t + b) * t + c) * t + p1);
+            k += 1;
+        }
         out
+    }
+
+    #[test]
+    fn output_matches_the_catmull_rom_formula() {
+        for in_rate in [16_000, 22_050, 24_000, 44_100] {
+            let input = sine(in_rate, 440.0, 5_000);
+            let expected = reference(&input, in_rate);
+            let out = resample_all(&input, 1, in_rate, 1152);
+            assert_eq!(out.len(), expected.len() * 2, "{in_rate} Hz");
+            for (frame, want) in out.chunks(2).zip(&expected) {
+                let want = to_i16(*want);
+                assert!(
+                    (frame[0] - want).abs() <= 1 && frame[0] == frame[1],
+                    "{in_rate} Hz: {frame:?}, expected {want}"
+                );
+            }
+        }
     }
 
     #[test]
     fn resampled_length_follows_the_rate() {
         for in_rate in [8_000, 22_050, 24_000, 44_100, 96_000] {
-            let input = sine(in_rate, 440.0, in_rate as usize); // 1 s
-            let out = resample_all(&input, in_rate, 1000);
+            let input = stereo(&sine(in_rate, 440.0, in_rate as usize)); // 1 s
+            let frames = resample_all(&input, 2, in_rate, 1000).len() / 2;
             let expected = RATE as usize;
             assert!(
-                out.len().abs_diff(expected) <= 2,
-                "{in_rate} Hz: {} frames, expected about {expected}",
-                out.len()
+                frames.abs_diff(expected) <= 2,
+                "{in_rate} Hz: {frames} frames, expected about {expected}"
             );
         }
     }
 
     #[test]
     fn resampling_does_not_depend_on_the_chunk_size() {
-        let input = sine(44_100, 440.0, 10_000);
-        let whole = resample_all(&input, 44_100, input.len());
-        let small = resample_all(&input, 44_100, 7);
-        assert_eq!(whole.len(), small.len());
-        for (a, b) in whole.iter().zip(&small) {
-            assert!((a[0] - b[0]).abs() < 1e-6 && (a[1] - b[1]).abs() < 1e-6);
-        }
+        let input = stereo(&sine(44_100, 440.0, 10_000));
+        let whole = resample_all(&input, 2, 44_100, 10_000);
+        let small = resample_all(&input, 2, 44_100, 7);
+        assert_eq!(whole, small);
     }
 
     #[test]
     fn resampled_sine_keeps_its_shape() {
-        let input = sine(22_050, 440.0, 22_050);
-        let out = resample_all(&input, 22_050, 512);
-        let expected = sine(RATE, 440.0, out.len());
+        let input = stereo(&sine(22_050, 440.0, 22_050));
+        let out = resample_all(&input, 2, 22_050, 512);
+        let expected = sine(RATE, 440.0, out.len() / 2);
         // Skip the first frames (the silent frame before the input).
         let worst = out
-            .iter()
+            .chunks(2)
             .zip(&expected)
             .skip(8)
-            .take(out.len() - 16)
-            .map(|(a, b)| (a[0] - b[0]).abs())
+            .take(expected.len() - 16)
+            .map(|(frame, want)| {
+                assert_eq!(frame[0], -frame[1]);
+                (f32::from(frame[0]) / f32::from(i16::MAX) - want).abs()
+            })
             .fold(0.0f32, f32::max);
         assert!(worst < 0.01, "largest error {worst}");
     }
 
     #[test]
     fn the_output_rate_passes_through() {
-        let input = sine(RATE, 440.0, 1000);
-        let out = resample_all(&input, RATE, 100);
-        assert_eq!(out, input);
+        let input = stereo(&sine(RATE, 440.0, 1000));
+        let out = resample_all(&input, 2, RATE, 100);
+        let expected: Vec<i16> = input.iter().map(|&v| to_i16(v)).collect();
+        assert_eq!(out, expected);
     }
 
     #[test]
-    fn mono_goes_to_both_sides_and_extra_channels_are_dropped() {
-        let mut out = Vec::new();
-        to_stereo(&[0.1, 0.2], 1, &mut out);
-        assert_eq!(out, vec![[0.1, 0.1], [0.2, 0.2]]);
-        to_stereo(&[0.1, 0.2, 0.3, 0.4, 0.5, 0.6], 3, &mut out);
-        assert_eq!(out, vec![[0.1, 0.2], [0.4, 0.5]]);
+    fn mono_goes_to_both_sides_and_matches_stereo() {
+        let mono = sine(22_050, 440.0, 3_000);
+        let both: Vec<f32> = mono.iter().flat_map(|&v| [v, v]).collect();
+        let from_mono = resample_all(&mono, 1, 22_050, 1152);
+        assert_eq!(from_mono, resample_all(&both, 2, 22_050, 1152));
+        // Passthrough too.
+        let mut resampler = Resampler::new(RATE, RATE, 1, 1.0);
+        let mut out = VecDeque::new();
+        resampler.process(&[0.25, -0.5], &mut out);
+        assert_eq!(
+            out,
+            [to_i16(0.25), to_i16(0.25), to_i16(-0.5), to_i16(-0.5)]
+        );
     }
 
     #[test]
-    fn samples_are_clamped() {
+    fn extra_channels_are_dropped() {
+        // Three channels: the third is loud and must not show.
+        let input: Vec<f32> = sine(RATE, 440.0, 500)
+            .iter()
+            .flat_map(|&v| [v, -v, 1.0])
+            .collect();
+        let out = resample_all(&input, 3, RATE, 100);
+        let expected: Vec<i16> = sine(RATE, 440.0, 500)
+            .iter()
+            .flat_map(|&v| [to_i16(v), to_i16(-v)])
+            .collect();
+        assert_eq!(out, expected);
+        // And through the interpolation.
+        let resampled = resample_all(&input, 3, 22_050, 128);
+        let stereo_only: Vec<f32> = input
+            .chunks(3)
+            .flat_map(|frame| [frame[0], frame[1]])
+            .collect();
+        assert_eq!(resampled, resample_all(&stereo_only, 2, 22_050, 128));
+    }
+
+    #[test]
+    fn the_gain_is_applied() {
+        let input = vec![0.5; 2_000];
+        let mut resampler = Resampler::new(22_050, RATE, 1, 0.5);
+        let mut out = VecDeque::new();
+        resampler.process(&input, &mut out);
+        let middle: Vec<i16> = out.iter().skip(100).take(1000).copied().collect();
+        assert!(middle.iter().all(|&s| s == to_i16(0.25)), "{middle:?}");
+    }
+
+    #[test]
+    fn samples_are_clamped_and_rounded_like_f32_round() {
         assert_eq!(to_i16(2.0), i16::MAX);
         assert_eq!(to_i16(-2.0), -i16::MAX);
         assert_eq!(to_i16(0.0), 0);
+        for i in -70_000..=70_000 {
+            // Includes the halfway points between steps.
+            let sample = i as f32 / 2.0 / f32::from(i16::MAX);
+            let want = (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16;
+            assert_eq!(to_i16(sample), want, "{sample}");
+        }
     }
 }
