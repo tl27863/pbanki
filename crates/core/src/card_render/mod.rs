@@ -29,9 +29,8 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 
 pub use image_cache::ImageCacheSize;
 use paginate::{PageSpan, collect_bands, element_top, page_of, paginate};
-use raster::{
-    CardFonts, MediaProvider, MediaStats, PageTimes, Raster, absolute_media_folder, media_base_url,
-};
+pub(crate) use raster::absolute_media_folder;
+use raster::{CardFonts, MediaProvider, MediaStats, PageTimes, Raster, media_base_url};
 
 /// Pixel format of the pages. It follows the panel, not the card: a gray
 /// panel (`BB8` framebuffer) gets `Gray8`, a color panel (`RGB24`) and the

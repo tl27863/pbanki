@@ -209,6 +209,8 @@ fn start_sync<F>(
             tracing::info!("[sync] {kind}: ignored, sync already running");
             return;
         }
+        // A sync works on the collection and may replace media files.
+        super::audio::stop();
         ui.set_sync_state(SyncState::syncing(message));
         ui.set_busy(true);
     }

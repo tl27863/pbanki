@@ -12,8 +12,8 @@ use anki::collection::Collection;
 use slint::ComponentHandle;
 
 use super::FrontendHooks;
-use super::card_pages;
 use super::models::{card_node, error_card};
+use super::{audio, card_pages};
 use crate::profile::ProfileTimer;
 use crate::profile_log;
 use crate::session::{LearnSession, clear_current_card, reset_session_memory};
@@ -285,7 +285,9 @@ fn finish_job(job: &CardJob, result: Result<LoadedCard, String>) {
             };
             if loaded.id == -1 {
                 clear_current_card(&job.session);
+                audio::clear_card();
             } else {
+                audio::card_loaded(&loaded);
                 *job.session.current_card.borrow_mut() = Some(loaded.id);
                 *job.session.states.borrow_mut() = loaded.states.clone();
                 *job.session.start_time.borrow_mut() = Some(Instant::now());
@@ -299,6 +301,7 @@ fn finish_job(job: &CardJob, result: Result<LoadedCard, String>) {
             // the next entry.
             reset_session_memory(&job.session);
             card_pages::clear();
+            audio::clear_card();
             error_card(job.deck.clone(), &err)
         }
     };

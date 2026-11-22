@@ -1,6 +1,7 @@
 slint::include_modules!();
 
 pub mod app;
+pub mod audio;
 pub mod card_render;
 pub mod config;
 pub mod fonts;

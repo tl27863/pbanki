@@ -1,0 +1,17 @@
+id: pbanki-no-alsa-mixer-writes
+language: Rust
+severity: error
+message: pbAnki must not write ALSA mixer or control values.
+note: |
+  Card audio plays through a PCM and sets its volume in software
+  (notes/audio.md). Mixer writes that were not restored broke the speaker path
+  on a PB700C; the firmware owns the codec mixer. Read-only mixer calls are
+  fine.
+rule:
+  any:
+    - kind: identifier
+      regex: ^snd_(mixer_selem_set_|mixer_elem_set|ctl_elem_write|ctl_elem_value_set_|ctl_elem_tlv_write)
+    - kind: field_identifier
+      regex: ^snd_(mixer_selem_set_|mixer_elem_set|ctl_elem_write|ctl_elem_value_set_|ctl_elem_tlv_write)
+    - kind: string_content
+      regex: snd_(mixer_selem_set_|mixer_elem_set|ctl_elem_write|ctl_elem_value_set_|ctl_elem_tlv_write)

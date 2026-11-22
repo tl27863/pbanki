@@ -6,6 +6,7 @@ use std::rc::Rc;
 use slint::ComponentHandle;
 
 use super::FrontendHooks;
+use super::audio;
 use super::card_jobs::{DECK_LOADING_DELAY, Loading, RATING_LOADING_DELAY, spawn_card_job};
 use super::decks;
 use super::sync::{SyncTrigger, end_finished_sync, schedule_sync};
@@ -56,6 +57,7 @@ pub(super) fn wire(
             if session.busy.get() {
                 return;
             }
+            audio::clear_card();
             if let Some(ui) = ui_weak.upgrade() {
                 end_finished_sync(&ui);
                 hooks.request_full_present(&ui);
@@ -119,6 +121,7 @@ pub(super) fn wire(
             let deck_id = deck.id;
             let set_deck = session.current_deck_id.get() != Some(deck_id);
             let render = render_context(&ui, &session, &renderer, shadows);
+            audio::stop();
 
             spawn_card_job(
                 ui_weak.clone(),
@@ -176,9 +179,25 @@ pub(super) fn wire(
                     // As `reveal()` in `learn.slint`.
                     ui.set_study_page(card.answer_start);
                     ui.set_show_answer(true);
+                    audio::answer_shown();
                 }
                 Resolved::Rate(rating) => rate(rating),
                 Resolved::None => {}
+            }
+        });
+    }
+
+    ui.on_answer_shown(audio::answer_shown);
+
+    {
+        let ui_weak = ui.as_weak();
+        let session = session.clone();
+        ui.on_replay_audio(move || {
+            if session.busy.get() {
+                return;
+            }
+            if let Some(ui) = ui_weak.upgrade() {
+                audio::replay(ui.get_show_answer());
             }
         });
     }
@@ -201,6 +220,7 @@ pub(super) fn wire(
             let render = render_context(&ui, &session, &renderer, shadows);
             tracing::info!("[deck {deck_id}] entering, set_deck={set_deck}");
             end_finished_sync(&ui);
+            audio::clear_card();
 
             spawn_card_job(
                 ui_weak.clone(),

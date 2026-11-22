@@ -1,6 +1,7 @@
 use pbanki_core::app;
+use pbanki_core::audio::AudioPlayer;
 use pbanki_core::config::Config;
-use pbanki_core::frontend::FrontendHooks;
+use pbanki_core::frontend::{AudioSetup, FrontendHooks};
 
 #[cfg(feature = "eink-sim")]
 mod eink_sim;
@@ -19,10 +20,25 @@ fn load_config() -> Config {
     config
 }
 
+/// Card audio on the host's ALSA `default` (PipeWire or PulseAudio through
+/// their ALSA plugin). Without a sound card the first clip reports that audio
+/// is unavailable.
+fn desktop_audio() -> Option<AudioSetup> {
+    Some(AudioSetup {
+        player: AudioPlayer::new(),
+        devices: vec!["default".into()],
+        output_ready: None,
+    })
+}
+
 #[cfg(not(feature = "eink-sim"))]
 fn main() {
     pbanki_core::logging::init();
-    let app = app::start(load_config(), false, FrontendHooks::default());
+    let hooks = FrontendHooks {
+        audio: desktop_audio(),
+        ..FrontendHooks::default()
+    };
+    let app = app::start(load_config(), false, hooks);
     let _ = app.run();
 }
 
@@ -54,6 +70,7 @@ fn main() {
                 full_refresh: Some(Rc::new(inkview_slint::request_full_refresh)),
                 // The simulator has a BB8 (gray) framebuffer.
                 page_format: PageFormat::Gray8,
+                audio: desktop_audio(),
                 ..FrontendHooks::default()
             };
             let app = app::start(load_config(), false, hooks);

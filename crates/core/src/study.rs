@@ -8,6 +8,7 @@ use anki::scheduler::states::SchedulingStates;
 use anki::timestamp::TimestampMillis;
 
 use anki::card_rendering::extract_av_tags;
+use anki::template::RenderedNode;
 use anki_proto::card_rendering::AvTag;
 
 use crate::card_render::html::{card_document, replace_av_placeholders, replace_type_tags};
@@ -35,10 +36,12 @@ pub struct LoadedCard {
     pub content: CardContent,
     pub durations: Vec<slint::SharedString>,
     pub states: Option<SchedulingStates>,
-    /// Audio and TTS tags of each side, in placeholder order. Not played yet:
-    /// kept for audio support (notes/blitz-card-render.md, "Card HTML").
+    /// Audio and TTS tags of each side, in placeholder order (`audio`,
+    /// notes/audio.md). The answer's are only its own, not the question's.
     pub question_av: Vec<AvTag>,
     pub answer_av: Vec<AvTag>,
+    /// The audio options of the card's deck.
+    pub audio: AudioOptions,
     /// The queue kind of this card (`New`, `Review`, `Learning`), for logs.
     /// (rslib does not export the enum.)
     pub queue_kind: String,
@@ -59,9 +62,54 @@ impl LoadedCard {
             states: None,
             question_av: Vec::new(),
             answer_av: Vec::new(),
+            audio: AudioOptions::default(),
             queue_kind: String::new(),
             predicted_next: Vec::new(),
         }
+    }
+}
+
+/// The audio options of a deck preset (Anki's deck options, "Audio").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AudioOptions {
+    /// Play a side's sounds when it shows ("Don't play audio automatically"
+    /// off).
+    pub autoplay: bool,
+    /// Replay on the answer side plays the question's sounds first ("Skip
+    /// question when replaying answer" off).
+    pub replay_question: bool,
+}
+
+impl Default for AudioOptions {
+    fn default() -> Self {
+        Self {
+            autoplay: true,
+            replay_question: true,
+        }
+    }
+}
+
+/// The audio options of the card's home deck (the original deck of a card in
+/// a filtered deck). Defaults if the deck or preset is missing.
+fn audio_options(col: &mut Collection, card: &Card) -> AudioOptions {
+    let proto: anki_proto::cards::Card = card.clone().into();
+    let home = if proto.original_deck_id != 0 {
+        proto.original_deck_id
+    } else {
+        proto.deck_id
+    };
+    let config = col
+        .get_deck(anki::decks::DeckId(home))
+        .ok()
+        .flatten()
+        .and_then(|deck| deck.config_id())
+        .and_then(|id| col.get_deck_config(id, true).ok().flatten());
+    match config {
+        Some(config) => AudioOptions {
+            autoplay: !config.inner.disable_autoplay,
+            replay_question: !config.inner.skip_question_when_replaying_answer,
+        },
+        None => AudioOptions::default(),
     }
 }
 
@@ -174,6 +222,7 @@ pub fn next_card(
         states: Some(card.states.clone()),
         question_av: documents.question_av,
         answer_av: documents.answer_av,
+        audio: audio_options(col, &card.card),
         queue_kind: format!("{:?}", card.kind),
         predicted_next: queued_cards.cards[1..]
             .iter()
@@ -199,13 +248,19 @@ pub fn card_documents(
     area: RenderArea,
     shadows: bool,
 ) -> Result<CardDocuments, String> {
+    // Partial render, as Anki desktop: `{{FrontSide}}` is filled here with
+    // the question after its AV tags became `[anki:play:q:N]` references, so
+    // the answer's tags are only its own and Show answer does not play the
+    // question's sounds again.
     let rendered = col
-        .render_existing_card(card.id(), false, false)
+        .render_existing_card(card.id(), false, true)
         .map_err(|err| format!("could not render card: {err}"))?;
 
     let tr = col.tr().clone();
-    let (question_html, question_av) = extract_av_tags(rendered.question().into_owned(), true, &tr);
-    let (answer_html, answer_av) = extract_av_tags(rendered.answer().into_owned(), false, &tr);
+    let (question_html, question_av) =
+        extract_av_tags(rendered_text(&rendered.qnodes, ""), true, &tr);
+    let (answer_html, answer_av) =
+        extract_av_tags(rendered_text(&rendered.anodes, &question_html), false, &tr);
     let type_fields = if answer_html.contains("[[type:") {
         type_in_fields(col, card.note_id())?
     } else {
@@ -247,6 +302,30 @@ pub fn card_documents(
         question_av,
         answer_av,
     })
+}
+
+/// The text of partially rendered template nodes, as Anki's `template.py`
+/// builds it without add-on filters: `{{FrontSide}}` becomes `frontside`,
+/// any other field left for Python keeps the text rslib gave it.
+fn rendered_text(nodes: &[RenderedNode], frontside: &str) -> String {
+    let mut text = String::new();
+    for node in nodes {
+        match node {
+            RenderedNode::Text { text: part } => text.push_str(part),
+            RenderedNode::Replacement {
+                field_name,
+                current_text,
+                ..
+            } => {
+                if field_name == "FrontSide" {
+                    text.push_str(frontside);
+                } else {
+                    text.push_str(current_text);
+                }
+            }
+        }
+    }
+    text
 }
 
 /// `(field name, field HTML)` of the card's note, for `[[type:Field]]` tags.
@@ -397,6 +476,49 @@ mod tests {
             .query_row("select count() from revlog", [], |row| row.get(0))
             .unwrap();
         assert_eq!(reviews, 0);
+
+        drop(col);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn sound_names(tags: &[AvTag]) -> Vec<String> {
+        use anki_proto::card_rendering::av_tag::Value;
+        tags.iter()
+            .filter_map(|tag| match &tag.value {
+                Some(Value::SoundOrVideo(name)) => Some(name.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The answer of a `{{FrontSide}}` template holds only its own sounds, as
+    /// in Anki desktop; the question's sounds stay references in its text.
+    #[test]
+    fn answer_audio_excludes_the_front_side() {
+        let (dir, mut col) = temp_collection("frontside");
+        let notetype = col.get_notetype_by_name("Basic").unwrap().unwrap();
+        let mut note = notetype.new_note();
+        note.set_field(0, "word[sound:q.mp3]").unwrap();
+        note.set_field(1, "meaning[sound:a1.mp3][sound:a2.ogg]")
+            .unwrap();
+        col.add_note(&mut note, anki::decks::DeckId(1)).unwrap();
+        let card = col.storage.all_cards_of_note(note.id).unwrap().remove(0);
+
+        let fonts = FontCatalog::build("none", &[], &[]);
+        let area = RenderArea {
+            width: 100,
+            height: 100,
+            scale: 1.0,
+        };
+        let docs = card_documents(&mut col, &card, &fonts, area, false).unwrap();
+
+        assert_eq!(sound_names(&docs.question_av), vec!["q.mp3"]);
+        assert_eq!(sound_names(&docs.answer_av), vec!["a1.mp3", "a2.ogg"]);
+        // The default preset plays automatically and replays the question.
+        assert_eq!(audio_options(&mut col, &card), AudioOptions::default());
+        // The answer still shows the question text.
+        assert!(docs.html.answer.contains("word"));
+        assert!(docs.html.answer.contains("meaning"));
 
         drop(col);
         let _ = fs::remove_dir_all(&dir);
