@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # A release run calls this workflow; never cancel it from a later push.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fmt:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show active-toolchain || rustup toolchain install
+      - run: cargo fmt --all --check
+
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: test
+      - run: cargo test --locked -p pbanki-core
+      - run: cargo test --locked -p pbanki --features sdk-6-10
+      - run: cargo test --locked -p pbanki-desktop --features eink-sim
+
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: lint
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: ast-grep
+      - name: tree-sitter CLI (Slint parser build)
+        run: npm install -g tree-sitter-cli
+      # clippy (four feature sets) + ast-grep rule tests and scan; notes/lint.md.
+      - run: make lint
+
+  cross:
+    name: cross (${{ matrix.target }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # Dev-profile ARM builds: catch breakage of the device builds on PRs.
+        target: [all, rk3566]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: cross-${{ matrix.target }}
+          mise: "true"
+      - run: make ${{ matrix.target }}

@@ -1,0 +1,152 @@
+name: Release
+
+# A release is made when the workspace version in Cargo.toml has no tag yet:
+# `make bump VERSION=x.y.z`, commit, push to main. A version with a `-`
+# (for example 0.2.0-rc.1) makes a prerelease. See notes/build.md.
+#
+# Dry run: on PRs that change the release files, and on runs from other
+# branches, the bundles are built, checked, and uploaded as run artifacts,
+# but nothing is published.
+on:
+  push:
+    branches: [main]
+    paths: [Cargo.toml]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/actions/**
+      - .github/release-template.md
+      - scripts/ci/**
+      - scripts/pocketbook/pbanki.app
+      - Makefile
+      - mise.toml
+      - rust-toolchain.toml
+  workflow_dispatch:
+
+# One release run at a time; a queued run checks the tags again when it starts.
+# PR dry runs have their own group per PR.
+concurrency:
+  group: release-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      release: ${{ steps.v.outputs.release }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+      dry_run: ${{ steps.v.outputs.dry_run }}
+      build: ${{ steps.v.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\(.*\)"/\1/p' Cargo.toml)
+          [ -n "$version" ] || { echo "no [workspace.package] version in Cargo.toml" >&2; exit 1; }
+          tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "$tag already exists; nothing to release"
+            release=false
+          else
+            echo "releasing $tag"
+            release=true
+          fi
+          case "$version" in *-*) prerelease=true ;; *) prerelease=false ;; esac
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] || [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "dry run: build and check only, no release"
+            dry_run=true
+            build=true
+          else
+            dry_run=false
+            build=$release
+          fi
+          {
+            echo "dry_run=$dry_run"
+            echo "build=$build"
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "release=$release"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+  checks:
+    needs: version
+    if: needs.version.outputs.build == 'true'
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: build (${{ matrix.name }})
+    needs: [version, checks]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: b288-b300
+            make: release
+            bundle: target/pocketbook
+            abi: soft
+          - name: rk3566
+            make: release-rk3566
+            bundle: target/pocketbook-rk3566
+            abi: hard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: release-${{ matrix.name }}
+          mise: "true"
+      - run: make ${{ matrix.make }}
+      - run: sh scripts/ci/verify-bundle.sh ${{ matrix.bundle }} ${{ matrix.abi }}
+      - name: Package
+        run: |
+          zip="pbanki-${{ needs.version.outputs.tag }}-${{ matrix.name }}.zip"
+          (cd "${{ matrix.bundle }}" && zip -9 "$GITHUB_WORKSPACE/$zip" pbanki.app pbanki.bin)
+          unzip -l "$zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: pbanki-*.zip
+          if-no-files-found: error
+
+  publish:
+    needs: [version, build]
+    if: needs.version.outputs.release == 'true' && needs.version.outputs.dry_run == 'false'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          cd dist
+          sha256sum pbanki-*.zip > SHA256SUMS
+          cat SHA256SUMS
+          sed "s/__VERSION__/$VERSION/g" ../.github/release-template.md > notes.md
+          flags=""
+          [ "$PRERELEASE" = true ] && flags="--prerelease"
+          # The release creates the tag at the built commit. --generate-notes
+          # appends GitHub's change list after the install notes.
+          gh release create "$TAG" pbanki-*.zip SHA256SUMS \
+            --target "$GITHUB_SHA" \
+            --title "pbAnki $TAG" \
+            --notes-file notes.md \
+            --generate-notes \
+            $flags

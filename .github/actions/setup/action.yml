@@ -1,0 +1,36 @@
+name: Setup pbAnki build
+description: System packages, Rust toolchain (rust-toolchain.toml), cargo cache, and optionally mise (Zig, cargo-zigbuild).
+inputs:
+  cache-key:
+    description: Extra key for the cargo cache (one per job or target).
+    required: true
+  mise:
+    description: Install the mise tools for the PocketBook cross builds.
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: System packages
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        # protoc: anki's rslib/proto build. The X11/Wayland/fontconfig headers:
+        # the desktop frontend (winit backend, minifb for eink-sim).
+        sudo apt-get install -y -qq --no-install-recommends \
+          protobuf-compiler libfontconfig-dev libxkbcommon-dev \
+          libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev
+
+    - name: Rust toolchain
+      shell: bash
+      # rustup on the runner reads rust-toolchain.toml (version, components, armv7 targets).
+      run: rustup show active-toolchain || rustup toolchain install
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ inputs.cache-key }}
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+
+    - uses: jdx/mise-action@v2
+      if: inputs.mise == 'true'
+      with:
+        cache: true

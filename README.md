@@ -101,7 +101,13 @@ keeps the panel busy and writes `applications/waveform-probe.log`. It needs the
 
 ## Installation
 
-Build the bundle for your device (see the table above): `make release`
+Download the zip for your device from
+[GitHub Releases](https://github.com/tl27863/pbanki/releases):
+`pbanki-vX.Y.Z-b288-b300.zip` (B288/B300) or `pbanki-vX.Y.Z-rk3566.zip`
+(RK3566). Each holds `pbanki.app` and `pbanki.bin`; `SHA256SUMS` lists the
+checksums.
+
+Or build the bundle yourself (see the table above): `make release`
 (B288/B300) or `make release-rk3566` (RK3566). Each creates:
 
 ```text
