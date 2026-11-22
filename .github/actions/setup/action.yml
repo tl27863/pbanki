@@ -16,9 +16,12 @@ runs:
         sudo apt-get update -qq
         # protoc: anki's rslib/proto build. The X11/Wayland/fontconfig headers:
         # the desktop frontend (winit backend, minifb for eink-sim).
+        # fonts-noto-core: the Blitz layout tests (card_render/tests.rs) assume
+        # Noto Sans metrics, the same font as on Arch hosts.
         sudo apt-get install -y -qq --no-install-recommends \
           protobuf-compiler libfontconfig-dev libxkbcommon-dev \
-          libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev
+          libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+          fonts-noto-core
 
     - name: Rust toolchain
       shell: bash
