@@ -3283,7 +3283,7 @@ checksum = "a257582fdcde896fd96463bf2d40eefea0580021c0712a0e2b028b60b47a837a"
 [[package]]
 name = "inkview"
 version = "0.3.0"
-source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-device-panel#0290a7fc24087a1c755e288673d97c1ab1e7aaac"
+source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-device-panel#dff31bda1e2b0a943bcc5311bcb323d160700696"
 dependencies = [
  "libloading 0.9.0",
  "log",
@@ -3295,7 +3295,7 @@ dependencies = [
 [[package]]
 name = "inkview-eink"
 version = "0.3.0"
-source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-device-panel#0290a7fc24087a1c755e288673d97c1ab1e7aaac"
+source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-device-panel#dff31bda1e2b0a943bcc5311bcb323d160700696"
 dependencies = [
  "euclid",
  "inkview",
@@ -3305,7 +3305,7 @@ dependencies = [
 [[package]]
 name = "inkview-slint"
 version = "0.3.0"
-source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-device-panel#0290a7fc24087a1c755e288673d97c1ab1e7aaac"
+source = "git+https://github.com/tl27863/inkview-rs?branch=pbanki-device-panel#dff31bda1e2b0a943bcc5311bcb323d160700696"
 dependencies = [
  "euclid",
  "inkview",
