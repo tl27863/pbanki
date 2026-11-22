@@ -27,6 +27,8 @@ The repository is a Cargo workspace with one `Cargo.lock` and one `target/`. The
 - `bench/blitz-render/` — headless Blitz render benchmark, outside the workspace (see `notes/build.md`).
 - `scripts/pocketbook/` — the release launcher `pbanki.app`, the bench launcher `blitz-bench.app`, and SSH/dropbear helper scripts for the device (see `SSH-SETUP.md`).
 - `scripts/sdk-emulator/` — the Docker SDK emulator.
+- `scripts/ci/verify-bundle.sh` — checks a release bundle (glibc, float ABI, softfp).
+- `.github/` — CI (`workflows/ci.yml`), releases on version bump (`workflows/release.yml`), the shared setup action, the release notes template. See `notes/build.md`.
 - `lint/`, `sgconfig.yml` — ast-grep rules.
 - `notes/` — project notes (index below).
 
@@ -57,6 +59,8 @@ make release          # B288/B300, soft-float (PB710) -> target/pocketbook/
 make release-rk3566   # RK3566, hard-float -> target/pocketbook-rk3566/
 ```
 
+Release: `make bump VERSION=x.y.z`, commit, push to `main`. GitHub Actions builds both bundles and publishes the release (see `notes/build.md`).
+
 SDK emulator: run `make sdk-emulator-setup` once, then `make sdk-emulator`. Add `SDK=6.11` for the RK3566 SDK.
 
 Dev sync server: `make -C ../pbanki-sync-server up`. The endpoint is `http://127.0.0.1:27701/`.
@@ -73,7 +77,7 @@ Dev sync server: `make -C ../pbanki-sync-server up`. The endpoint is `http://127
 
 | File | Topic |
 |---|---|
-| `notes/build.md` | Toolchain, PocketBook builds, release bundle, tests, clippy |
+| `notes/build.md` | Toolchain, PocketBook builds, release bundle, tests, CI and releases, clippy |
 | `notes/emulators.md` | SDK emulator, eink-sim, waveform probe |
 | `notes/inkview-backend.md` | The inkview-rs fork, rendering, system panel, device info |
 | `notes/eink-refresh.md` | Update path, full presents, periodic full refresh, activity icons, update policy, and why they are like this |

@@ -66,7 +66,18 @@ sdk-emulator-build:
 sdk-emulator: sdk-emulator-build
 	./scripts/sdk-emulator/run.sh
 
-.PHONY: all rk3566 release release-profile release-rk3566 release-rk3566-profile sdk-emulator-setup sdk-emulator-build sdk-emulator lint lint-parsers
+# Version bump: `make bump VERSION=0.2.0`. Sets the workspace version and the
+# workspace entries in Cargo.lock (no `cargo update`). Pushing the commit to
+# main makes the GitHub release (.github/workflows/release.yml, notes/build.md).
+bump:
+	@test -n "$(VERSION)" || { echo "usage: make bump VERSION=x.y.z[-rc.N]"; exit 1; }
+	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$$' || { echo "not a semver version: $(VERSION)"; exit 1; }
+	sed -i '/^\[workspace\.package\]/,/^\[/s/^version = ".*"/version = "$(VERSION)"/' Cargo.toml
+	cargo metadata --format-version 1 >/dev/null
+	@git diff --stat Cargo.toml Cargo.lock
+	@echo "next: git commit -am 'Release v$(VERSION)' && git push"
+
+.PHONY: all rk3566 release release-profile release-rk3566 release-rk3566-profile sdk-emulator-setup sdk-emulator-build sdk-emulator lint lint-parsers bump
 
 # Lint: clippy plus the ast-grep rules in lint/ (see sgconfig.yml). ast-grep
 # comes from `cargo install ast-grep --locked`, the Slint parser build needs

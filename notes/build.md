@@ -66,7 +66,7 @@ The B288/B300 targets build with `BASE_RUSTFLAGS`, which is `SOFTFP_RUSTFLAGS` (
 
 ## Tests
 
-There is no CI. Unit tests are inline `#[cfg(test)] mod tests` at the end of the module that they test.
+CI runs the tests on GitHub (see "CI and releases"). Unit tests are inline `#[cfg(test)] mod tests` at the end of the module that they test.
 
 | Command | Tests |
 |---|---|
@@ -81,6 +81,36 @@ Tests in `../inkview-rs`:
 
 - Device and update names: `cargo test -p inkview --no-default-features --features sdk-6-10 --lib`. The doctests fail on bindgen comments. This is a known problem.
 - Update policy: `cargo test -p inkview-slint --no-default-features --features sdk-6-10`.
+
+## CI and releases
+
+GitHub Actions, runner `ubuntu-24.04`. `.github/actions/setup/` installs the system packages (`protobuf-compiler` for anki's proto build, X11/Wayland/fontconfig headers for the desktop crate), the toolchain from `rust-toolchain.toml`, the cargo cache, and the mise tools (cross builds only). The cache is saved only on `main`.
+
+`.github/workflows/ci.yml` runs on pushes to `main`, on PRs, and from the release workflow:
+
+| Job | Command |
+|---|---|
+| `fmt` | `cargo fmt --all --check` |
+| `test` | the three test commands above, with `--locked` |
+| `lint` | `make lint` (ast-grep from `taiki-e/install-action`, `tree-sitter-cli` from npm) |
+| `cross` | `make` and `make rk3566` (dev profile) |
+
+Clippy does not use `-D warnings`, because core has known warnings.
+
+`.github/workflows/release.yml` makes a release when the workspace version has no tag yet:
+
+1. `make bump VERSION=0.2.0`. It sets `[workspace.package] version` in `Cargo.toml` and the workspace entries in `Cargo.lock` (through `cargo metadata`, not `cargo update`).
+2. Commit `Cargo.toml` and `Cargo.lock`, then push to `main`. The workflow runs on pushes that change `Cargo.toml`, and from `workflow_dispatch`.
+3. The `version` job reads the version. If the tag `v<version>` exists, the run stops.
+4. The run calls `ci.yml`. Then it runs `make release` and `make release-rk3566` in parallel.
+5. `scripts/ci/verify-bundle.sh <bundle> soft|hard` checks each bundle: glibc 2.38 or lower, the float ABI, and (soft only) hardware float instructions. You can run it locally after a release build.
+6. The `publish` job creates the release and the tag at the built commit. Assets: `pbanki-v<version>-b288-b300.zip`, `pbanki-v<version>-rk3566.zip` (`pbanki.app` and `pbanki.bin` at the zip root), and `SHA256SUMS`. The notes are `.github/release-template.md` followed by GitHub's generated change list.
+
+- A version with `-` (for example `0.2.0-rc.1`) makes a prerelease.
+- Dry run: a PR that changes the release files (the workflow, the setup action, `scripts/ci/`, the launcher, `Makefile`, `mise.toml`, `rust-toolchain.toml`) runs steps 4–5 and uploads the zips as run artifacts. A manual run from a branch other than `main` does the same. Neither publishes.
+- The startup log has `[app] pbAnki v<version>`.
+- CI does not test on a device. Check the launcher and the device build before you bump the version.
+- Release builds use fat LTO with one codegen unit. Expect a long first run; later runs use the cache.
 
 ## Clippy
 

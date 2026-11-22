@@ -30,6 +30,7 @@ pub struct App {
 /// Platforms with a custom Slint platform must call `set_platform` first:
 /// font registration uses the platform's shared font collection.
 pub fn start(config: Config, native_keyboard: bool, hooks: FrontendHooks) -> App {
+    tracing::info!("[app] pbAnki v{}", env!("CARGO_PKG_VERSION"));
     let config = Rc::new(RefCell::new(config));
 
     let setup_timer = ProfileTimer::start();
