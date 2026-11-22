@@ -18,7 +18,7 @@ Line format:
 
 ## Levels and filter
 
-- `PBANKI_LOG` sets the filter in `EnvFilter` syntax. The default is `info`. An incorrect value gives a warning and the default.
+- `PBANKI_LOG` sets the filter in `EnvFilter` syntax. The default is `info,symphonia=warn` (the audio decoder logs a line per MP3 file at `info`). An incorrect value gives a warning and the default.
 - Examples:
   - `PBANKI_LOG=warn` — warnings and errors only.
   - `PBANKI_LOG=info,eink=off` — no e-ink backend lines.

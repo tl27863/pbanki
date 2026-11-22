@@ -83,6 +83,9 @@ export struct DeviceSettings {
     key_next_question: KeyAction,
     key_prev_answer: KeyAction,
     key_next_answer: KeyAction,
+    // Card audio (notes/audio.md): on or off, and the volume 0..10.
+    audio_enabled: bool,
+    audio_volume: int,
 }
 
 // The stats of one deck (`stats.rs`, `frontend/stats.rs`). Rust formats the

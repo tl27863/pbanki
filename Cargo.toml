@@ -44,6 +44,11 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 # features (its day rollover uses `chrono::Local`), so it adds no crates.
 chrono = { version = "0.4.41", default-features = false, features = ["std", "clock"] }
 
+# Card audio (notes/audio.md): decoding, and libasound loaded at run time.
+# Only the codecs and containers that Anki decks use.
+symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "aac", "isomp4", "ogg", "vorbis", "wav", "pcm", "flac", "id3v1", "id3v2"] }
+libloading = "0.8.9"
+
 [profile.release]
 opt-level = 3
 lto = "fat"

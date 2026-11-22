@@ -3,6 +3,7 @@
 //! Platform differences come in through `FrontendHooks`. Card loads and syncs
 //! run on a worker thread that owns the collection (`card_jobs`).
 
+mod audio;
 mod card_jobs;
 mod card_pages;
 mod decks;
@@ -25,6 +26,7 @@ use crate::{MainWindow, SyncState, Theme};
 use models::translations;
 use settings::{device_settings_from_config, key_hints_from_config, sync_settings_from_config};
 
+pub use audio::AudioSetup;
 pub use sync::{SyncHooks, maybe_auto_sync};
 
 /// Platform hooks passed to `wire_callbacks` and `maybe_auto_sync`.
@@ -47,6 +49,9 @@ pub struct FrontendHooks {
     /// Pixel format of the card pages: `Gray8` for a gray panel (`BB8`
     /// framebuffer), `Rgb8` (the default) for a color panel and the desktop.
     pub page_format: PageFormat,
+    /// Card audio. `None` on a device that cannot play sound
+    /// (notes/audio.md, "Devices without a usable output").
+    pub audio: Option<AudioSetup>,
 }
 
 impl FrontendHooks {
@@ -88,6 +93,12 @@ pub fn wire_callbacks(
     let renderer = spawn_card_renderer(ui, &session, &config.borrow(), hooks.page_format);
     card_pages::set_renderer(renderer.clone());
     ui.on_page_image(|answer, page, _version| card_pages::page_image(answer, page));
+    audio::init(
+        ui,
+        hooks.audio.clone(),
+        &config.borrow(),
+        &media_folder(&config.borrow()),
+    );
 
     decks::wire(ui, &session);
     stats::wire(ui, &session, &hooks);

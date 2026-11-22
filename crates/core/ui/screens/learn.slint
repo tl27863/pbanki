@@ -4,6 +4,7 @@ import { CardNode, HwKey, KeyAction, KeyHints } from "../types.slint";
 import { PlainButton } from "../components/plain_button.slint";
 import { RatingButton } from "../components/rating_button.slint";
 import { TopBar } from "../components/top_bar.slint";
+import { IconButton } from "../components/icon_button.slint";
 import { KeyGlyph } from "../components/key_glyph.slint";
 import { Loader } from "../components/loader.slint";
 import { ActivityIcon, ActivityKind } from "../components/activity_icon.slint";
@@ -30,6 +31,11 @@ export component LearnScreen {
     // their press feedback does not add panel updates).
     in property <bool> busy: false;
     in property <KeyHints> key-hints;
+    // The shown side has sounds: the replay button shows.
+    in property <bool> has-audio: false;
+    in property <bool> audio-playing: false;
+    // Shown in the top bar, e.g. that there is no audio output.
+    in property <string> audio-message;
     // Both are reset from Rust before a new card is set, so the first frame
     // of a card already shows its question page 1.
     in-out property <bool> show_answer;
@@ -50,12 +56,15 @@ export component LearnScreen {
     // rating (`keys.rs`) from the configured actions.
     callback study-key(key: HwKey);
     pure callback page-image(answer: bool, page: int, version: int) -> image;
+    callback answer-shown();
+    callback replay-audio();
 
     // Show answer opens the page with Anki's `#answer` marker, not page 1:
     // the answer usually repeats the question first.
     function reveal() {
         current-page = card.answer-start;
         show_answer = true;
+        answer-shown();
     }
 
     forward-focus: focus-scope;
@@ -93,8 +102,19 @@ export component LearnScreen {
         if !loading: VerticalLayout {
             TopBar {
                 has-back: true;
+                title: root.audio-message;
                 back => {
                     root.home_clicked();
+                }
+
+                // Replay, or stop while playing. Disabled (no icon) while a
+                // job runs, like the study buttons.
+                if root.has-audio && valid_deck: IconButton {
+                    icon: root.audio-playing ? @image-url("../icons/audio_stop.svg") : @image-url("../icons/audio.svg");
+                    enabled: !root.busy;
+                    clicked => {
+                        root.replay-audio();
+                    }
                 }
 
                 HorizontalLayout {

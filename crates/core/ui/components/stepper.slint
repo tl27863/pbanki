@@ -3,17 +3,24 @@ import { Constants } from "../constants.slint";
 import { IconButton } from "icon_button.slint";
 
 // Previous and next buttons around one of a list of labels, in a box. It
-// wraps at both ends.
+// wraps at both ends, unless `wrap` is false (a volume must not jump from
+// the loudest to silent).
 export component Stepper {
     in property <[string]> labels;
     in-out property <int> index;
+    in property <bool> wrap: true;
     callback changed(index: int);
     height: Constants.bar_height;
 
     function step(delta: int) {
         if root.labels.length > 0 {
-            root.index = Math.mod(root.index + delta + root.labels.length, root.labels.length);
-            root.changed(root.index);
+            if root.wrap {
+                root.index = Math.mod(root.index + delta + root.labels.length, root.labels.length);
+                root.changed(root.index);
+            } else if root.index + delta >= 0 && root.index + delta < root.labels.length {
+                root.index = root.index + delta;
+                root.changed(root.index);
+            }
         }
     }
 

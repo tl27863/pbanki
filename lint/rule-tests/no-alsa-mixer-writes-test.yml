@@ -1,0 +1,16 @@
+id: pbanki-no-alsa-mixer-writes
+valid:
+  - |
+    alsa_api! {
+        snd_pcm_writei: fn(Pcm, *const c_void, c_ulong) -> c_long;
+        snd_mixer_selem_get_playback_volume: fn(Elem, c_int, *mut c_long) -> c_int;
+    }
+  - let rc = unsafe { (alsa.snd_pcm_drop)(pcm) };
+invalid:
+  - |
+    alsa_api! {
+        snd_mixer_selem_set_playback_volume_all: fn(Elem, c_long) -> c_int;
+    }
+  - let rc = unsafe { (alsa.snd_mixer_selem_set_playback_switch_all)(elem, 1) };
+  - let rc = unsafe { (alsa.snd_ctl_elem_write)(ctl, value) };
+  - let set = lib.get::<Fn>(b"snd_mixer_selem_set_playback_volume\0");

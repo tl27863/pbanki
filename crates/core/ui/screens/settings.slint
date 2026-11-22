@@ -12,6 +12,8 @@ export component SettingsScreen {
     in-out property <DeviceSettings> device;
     in property <SyncState> sync_state;
     in property <bool> native-keyboard: false;
+    // The device can play sound (`FrontendHooks::audio`).
+    in property <bool> audio-supported: false;
 
     callback back();
     callback save(SyncSettings);
@@ -53,6 +55,7 @@ export component SettingsScreen {
             vertical-stretch: 1;
             tr: root.tr;
             settings <=> root.device;
+            audio-supported: root.audio-supported;
             save(settings) => {
                 root.save-device(settings);
             }

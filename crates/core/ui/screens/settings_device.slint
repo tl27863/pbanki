@@ -3,6 +3,7 @@ import { Constants, Translations } from "../constants.slint";
 import { DeviceSettings, KeyAction } from "../types.slint";
 import { Stepper } from "../components/stepper.slint";
 import { CycleSelect } from "../components/cycle_select.slint";
+import { Toggle } from "../components/toggle.slint";
 
 component Heading inherits Text {
     height: 32px;
@@ -71,13 +72,17 @@ component KeyRow {
     }
 }
 
-// The Device tab: the full refresh interval and the actions of the Prev and
-// Next keys. Each change is saved at once; there is no Save button. A tap on
-// a key action selects the next one.
+// The Device tab: the full refresh interval, the actions of the Prev and
+// Next keys, and card audio (only on a device that can play sound). Each
+// change is saved at once; there is no Save button. A tap on a key action
+// selects the next one.
 export component SettingsDevice {
     in property <Translations> tr;
     in-out property <DeviceSettings> settings;
+    in property <bool> audio-supported: false;
     callback save(DeviceSettings);
+
+    property <[string]> volume-labels: ["Silent", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
 
     property <[string]> refresh-labels: ["Never", "Every card", "Every 5 cards", "Every 10 cards"];
     property <[string]> question-labels: ["Nothing", tr.show_answer];
@@ -207,6 +212,43 @@ export component SettingsDevice {
 
         Caption {
             text: "If a card has more than one page, Prev and Next turn the page first.";
+        }
+
+        if root.audio-supported: Hairline { }
+
+        if root.audio-supported: Heading {
+            text: "Card audio";
+        }
+
+        if root.audio-supported: Toggle {
+            text: "Play card sounds";
+            checked: root.settings.audio_enabled;
+            toggled => {
+                root.settings.audio_enabled = self.checked;
+                root.save(root.settings);
+            }
+        }
+
+        if root.audio-supported && root.settings.audio_enabled: HorizontalLayout {
+            spacing: Constants.spacing_m;
+            Text {
+                text: "Volume";
+                font-family: Constants.font_family_standard;
+                font-size: Constants.font_size_content;
+                color: Theme.ink;
+                vertical-alignment: center;
+            }
+
+            Stepper {
+                horizontal-stretch: 1;
+                labels: root.volume-labels;
+                wrap: false;
+                index: root.settings.audio_volume;
+                changed(index) => {
+                    root.settings.audio_volume = index;
+                    root.save(root.settings);
+                }
+            }
         }
     }
 }

@@ -28,6 +28,8 @@ anyrender_vello_cpu.workspace = true
 parley.workspace = true
 peniko.workspace = true
 image.workspace = true
+symphonia.workspace = true
+libloading.workspace = true
 
 [features]
 default = []

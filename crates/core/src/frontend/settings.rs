@@ -7,6 +7,7 @@ use std::rc::Rc;
 use slint::ComponentHandle;
 
 use super::FrontendHooks;
+use super::audio;
 use super::decks;
 use super::sync::end_finished_sync;
 use crate::config::Config;
@@ -33,6 +34,7 @@ pub(super) fn wire(
                 return;
             }
             if let Some(ui) = ui_weak.upgrade() {
+                audio::stop();
                 show_settings(&ui, &config.borrow(), &hooks);
             }
         });
@@ -98,6 +100,7 @@ pub(super) fn wire(
             }
             let config = config.borrow();
             apply_device_settings(&session, &config);
+            audio::apply_config(&config);
             if let Some(ui) = ui_weak.upgrade() {
                 ui.set_device_settings(device_settings_from_config(&config));
                 ui.set_key_hints(key_hints_from_config(&config));
@@ -192,6 +195,8 @@ pub(crate) fn device_settings_from_config(config: &Config) -> DeviceSettings {
         key_next_question: ui_action(general.key_next_question),
         key_prev_answer: ui_action(general.key_prev_answer),
         key_next_answer: ui_action(general.key_next_answer),
+        audio_enabled: general.audio_enabled,
+        audio_volume: general.audio_volume as i32,
     }
 }
 
@@ -223,6 +228,10 @@ fn save_device_settings(config: &mut Config, settings: &DeviceSettings) -> Resul
     general.key_next_question = config_action(settings.key_next_question);
     general.key_prev_answer = config_action(settings.key_prev_answer);
     general.key_next_answer = config_action(settings.key_next_answer);
+    general.audio_enabled = settings.audio_enabled;
+    general.audio_volume = settings
+        .audio_volume
+        .clamp(0, crate::config::AUDIO_VOLUME_MAX as i32) as u32;
     config.save().map_err(|err| err.to_string())
 }
 
@@ -245,12 +254,16 @@ mod tests {
         settings.full_refresh_every = 10;
         settings.key_prev_answer = crate::KeyAction::Hard;
         settings.key_next_question = crate::KeyAction::Nothing;
+        settings.audio_enabled = false;
+        settings.audio_volume = 9;
         save_device_settings(&mut config, &settings).unwrap();
 
         let saved = Config::load_or_create(config.path.to_str().unwrap()).unwrap();
         assert_eq!(saved.general.full_refresh_every, 10);
         assert_eq!(saved.general.key_prev_answer, KeyAction::Hard);
         assert_eq!(saved.general.key_next_question, KeyAction::Nothing);
+        assert!(!saved.general.audio_enabled);
+        assert_eq!(saved.general.audio_volume, 9);
         assert_eq!(device_settings_from_config(&saved), settings);
         assert_eq!(
             key_hints_from_config(&saved).prev_answer,

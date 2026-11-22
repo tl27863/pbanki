@@ -6,7 +6,8 @@
 //! with panics and InkView's own output.
 //!
 //! The filter comes from `PBANKI_LOG` (`EnvFilter` syntax, for example
-//! `PBANKI_LOG=info,anki=debug`); the default is `info`.
+//! `PBANKI_LOG=info,anki=debug`); the default is `info`, with the audio
+//! decoder (symphonia) at `warn`: it logs a line per MP3 file otherwise.
 
 use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -18,7 +19,7 @@ use tracing_subscriber::fmt::time::FormatTime;
 /// Environment variable with the log filter.
 pub const LOG_ENV: &str = "PBANKI_LOG";
 
-const DEFAULT_FILTER: &str = "info";
+const DEFAULT_FILTER: &str = "info,symphonia=warn";
 
 /// Installs the global subscriber. Call it first in `main`; events logged
 /// earlier are dropped.

@@ -56,6 +56,21 @@ pub struct GeneralConfig {
     pub key_prev_answer: KeyAction,
     #[serde(default = "default_key_next_answer")]
     pub key_next_answer: KeyAction,
+    /// Play the `[sound:…]` files of cards (`audio`, notes/audio.md).
+    /// Settings > Device.
+    #[serde(default = "default_audio_enabled")]
+    pub audio_enabled: bool,
+    /// Card audio volume, 0 (silent) to 10 (full scale), in 3 dB steps
+    /// (`audio::volume_gain`). Settings > Device.
+    #[serde(
+        default = "default_audio_volume",
+        deserialize_with = "deserialize_audio_volume"
+    )]
+    pub audio_volume: u32,
+    /// The ALSA PCM for card audio. Unset: the frontend picks it (`hwout_mix`
+    /// on the PocketBook, `default` on the desktop). Config file only.
+    #[serde(default)]
+    pub audio_device: Option<String>,
 }
 
 impl GeneralConfig {
@@ -107,6 +122,27 @@ fn default_key_prev_answer() -> KeyAction {
 
 fn default_key_next_answer() -> KeyAction {
     KeyConfig::default().next_answer
+}
+
+/// Comment written above `audio_enabled` when the key is added.
+const AUDIO_COMMENT: &str = "\n# Play the sounds of cards, and their volume from 0 (silent) to 10. Also in\n# Settings > Device. audio_device names the ALSA device; leave it out to let\n# pbAnki choose.\n";
+
+/// The largest `audio_volume`.
+pub const AUDIO_VOLUME_MAX: u32 = 10;
+
+fn default_audio_enabled() -> bool {
+    true
+}
+
+fn default_audio_volume() -> u32 {
+    5
+}
+
+fn deserialize_audio_volume<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    i64::deserialize(deserializer).map(|v| v.clamp(0, i64::from(AUDIO_VOLUME_MAX)) as u32)
 }
 
 /// Comment written above `system_panel` in the template and when the key is
@@ -214,6 +250,9 @@ impl Default for Config {
                 key_next_question: default_key_next_question(),
                 key_prev_answer: default_key_prev_answer(),
                 key_next_answer: default_key_next_answer(),
+                audio_enabled: default_audio_enabled(),
+                audio_volume: default_audio_volume(),
+                audio_device: None,
             },
             ankiweb: AnkiWebConfig {
                 username: String::new(),
@@ -287,6 +326,13 @@ key_next_question = "showanswer"
 key_prev_answer = "again"
 key_next_answer = "good"
 
+# Play the sounds of cards, and their volume from 0 (silent) to 10. Also in
+# Settings > Device. audio_device names the ALSA device; leave it out to let
+# pbAnki choose.
+audio_enabled = true
+audio_volume = 5
+# audio_device = "hwout_mix"
+
 [ankiweb]
 # AnkiWeb synchronization settings
 # Leave empty to disable sync
@@ -343,6 +389,8 @@ impl Config {
                 "key_next_question",
                 "key_prev_answer",
                 "key_next_answer",
+                "audio_enabled",
+                "audio_volume",
             ]
             .iter()
             .any(|key| !general_has_key(&contents, key));
@@ -435,6 +483,19 @@ impl Config {
         general["key_next_question"] = value(self.general.key_next_question.name());
         general["key_prev_answer"] = value(self.general.key_prev_answer.name());
         general["key_next_answer"] = value(self.general.key_next_answer.name());
+        set_with_comment(
+            general,
+            "audio_enabled",
+            value(self.general.audio_enabled),
+            AUDIO_COMMENT,
+        );
+        general["audio_volume"] = value(i64::from(self.general.audio_volume));
+        match self.general.audio_device.as_deref() {
+            Some(device) => general["audio_device"] = value(device),
+            None => {
+                general.remove("audio_device");
+            }
+        }
 
         let ankiweb = table_mut(&mut document, "ankiweb")?;
         ankiweb["username"] = value(&self.ankiweb.username);
@@ -767,6 +828,62 @@ password = ""
         assert_eq!(config.general.key_prev_answer, KeyAction::Hard);
         assert_eq!(config.general.key_next_answer, KeyAction::Easy);
         assert_eq!(config.general.key_next_question, KeyAction::ShowAnswer);
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn audio_settings_get_defaults_and_round_trip() {
+        let path = temp_config_path("audio");
+        fs::write(
+            &path,
+            r#"[general]
+language = "en-GB"
+collection_path = "/tmp/collection"
+
+[ankiweb]
+"#,
+        )
+        .unwrap();
+
+        let mut config = Config::load_or_create(path.to_str().unwrap()).unwrap();
+        assert!(config.general.audio_enabled);
+        assert_eq!(config.general.audio_volume, 5);
+        assert_eq!(config.general.audio_device, None);
+        let contents = fs::read_to_string(&path).unwrap();
+        assert!(contents.contains("# Play the sounds of cards"));
+        assert!(contents.contains("audio_enabled = true"));
+        assert!(contents.contains("audio_volume = 5"));
+        assert!(!contents.contains("audio_device ="));
+
+        config.general.audio_enabled = false;
+        config.general.audio_volume = 3;
+        config.general.audio_device = Some("default".into());
+        config.save().unwrap();
+        let mut config = Config::load_or_create(path.to_str().unwrap()).unwrap();
+        assert!(!config.general.audio_enabled);
+        assert_eq!(config.general.audio_volume, 3);
+        assert_eq!(config.general.audio_device.as_deref(), Some("default"));
+
+        config.general.audio_device = None;
+        config.save().unwrap();
+        assert!(
+            !fs::read_to_string(&path)
+                .unwrap()
+                .contains("audio_device =")
+        );
+
+        let config: Config = toml::from_str(
+            r#"[general]
+language = "en-GB"
+collection_path = "/tmp/collection"
+audio_volume = 40
+
+[ankiweb]
+"#,
+        )
+        .unwrap();
+        assert_eq!(config.general.audio_volume, AUDIO_VOLUME_MAX);
 
         let _ = fs::remove_file(path);
     }

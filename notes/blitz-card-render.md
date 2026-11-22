@@ -23,7 +23,7 @@ Targets: black-and-white panels (`BB8` framebuffer, PB710) and color panels (`RG
 - Dioxus and the tokio runtime on the UI thread.
 - `EinkOptions::from_env` and moving the simulator to `inkview-eink`. You can do these later as cleanup. They do not block this plan.
 - Animations. A page is one still frame. An override sheet (`html.rs`, `OVERRIDE_CSS`) sets `animation: none !important; transition: none !important`, so every element shows its end state. Resolving at `t = 0` alone is not enough: transitions do not start, but a CSS animation shows its *first* keyframe (see Implementation notes).
-- Audio playback. It is planned for later. This plan keeps the AV tags for it (see Card HTML).
+- Audio playback. It is done separately (`audio.md`). This plan keeps the AV tags for it (see Card HTML).
 - JavaScript. Blitz has no JS. MathJax, and templates that use scripts, show their raw source (see Risks).
 
 ## What exists
@@ -98,11 +98,12 @@ The worker builds `CardHtml` from `RenderCardOutput`:
 
 - `BASE_CSS`: white background and default black text on `html` (the note type CSS can set its own colors), the card font list (`font-family: "<card_font>", <fallback fonts>`), `img { max-width: 100%; max-height: <page height>px }`. Thus an image never needs more than one page.
 - `[[type:…]]`: remove it from the question, as `remove_brackets` does today. On the answer side, use the `Back` field value as the current code does (`study.rs`).
-- Audio and TTS tags (`[sound:…]`, `{{tts …}}`): not played yet, but audio support is planned. Do not throw them away:
+- Audio and TTS tags (`[sound:…]`, `{{tts …}}`): the study screen plays the sounds (`audio.md`). TTS is not supported.
+  - The card is rendered with `partial_render = true`. `{{FrontSide}}` is filled with the question after its tags became placeholders (`study.rs`, `rendered_text`), as in Anki desktop. The answer's tag list then holds only the answer's own sounds.
   - Call `anki::card_rendering::extract_av_tags(html, question_side, tr)` on each side. It returns the HTML with `[anki:play:q:N]` / `[anki:play:a:N]` placeholders and the list of `AvTag`s (`SoundOrVideo(file)` or `TextToSpeech { field_text, lang, … }`).
   - Replace each placeholder with an empty inline element: `<span class="pbanki-av" data-side="q" data-index="N"></span>`. It draws nothing now.
-  - Keep the `AvTag` lists in `CardHtml` and `LoadedCard` (`question_av`, `answer_av`), unused for now.
-  - Later (audio support): give `.pbanki-av` a size and an icon in `BASE_CSS`. After layout, read the boxes of these spans (page and position). The study screen puts a Slint touch area on each box, and a tap plays the tag. Auto-play uses the lists in order. Put a short comment at the replacement in code that points to this note.
+  - The `AvTag` lists are in `LoadedCard` (`question_av`, `answer_av`). `frontend/audio.rs` plays them.
+  - Not done yet: give `.pbanki-av` a size and an icon in `BASE_CSS`. After layout, read the boxes of these spans (page and position). The study screen puts a Slint touch area on each box, and a tap plays the tag. Auto-play uses the lists in order. Put a short comment at the replacement in code that points to this note.
 - Fonts: there are no system fonts. The card fonts are the fallback chain of all common scripts and of the generic families, with the `choose_font` family first (`fonts.md`, "Card renderer fonts"). The `[font]` missing-glyph warning stays (it uses the stripped text). `fonts.sanitize` is not used for HTML: changing characters inside markup could break tags.
 - Media (`<img src>`): a `NetProvider` reads files from the collection media folder on the render thread. Before painting, wait until `has_pending_critical_resources()` is false (it reads files synchronously, so this should be immediate). Step 5.
 - Image cache (`image_cache.rs`, 2026-11-05): Blitz decodes each image in each document, and it has no hook for decoded images. `MediaProvider` decodes an image once and gives Blitz PAM (uncompressed RGBA, the `pnm` feature of `image`), which Blitz decodes with little more than a copy. Cache key: path, length and modification time; LRU within `ImageCacheSize` (config `image_cache_mb`, default 32 MB). One image can take `image_cache_max_image_mb` (default 16 MB of RGBA, about 4 megapixels). A larger image goes to Blitz unchanged: the size comes from the header before the decode. Converting an image that is not kept only adds copies (PB710, 1600×2400 JPEG: 1226 → 1505 ms with a 6 MB limit). A cache hit costs about 7 ms per document for a 400×600 image on the PB710 (copies at about 330 MB/s). SVG, fonts, and files that do not decode go to Blitz unchanged. The pixels and the size are the ones Blitz would decode itself, so layout does not change.

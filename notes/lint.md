@@ -16,6 +16,7 @@ The rules check invariants that clippy cannot check.
 | `pbanki-no-eprintln` | Rust | No print macros outside `mod tests` and `build.rs`. Use `tracing` |
 | `pbanki-no-wait-for-update-complete` | Rust | No `wait_for_update_complete` or `WaitForUpdateComplete` |
 | `pbanki-no-netconnect-silent` | Rust | No `NetConnectSilent` |
+| `pbanki-no-alsa-mixer-writes` | Rust | No ALSA mixer or control writes (`snd_mixer_selem_set_*`, `snd_ctl_elem_write`, …). Card audio sets its volume in software (`audio.md`) |
 | `pbanki-no-slint-font-env` | Rust | No `SLINT_FONT_PATH` or `SLINT_DEFAULT_FONT` |
 | `pbanki-sync-state-constructor` | Rust | Build `SyncState` through its constructors outside `frontend/models.rs` |
 | `pbanki-collection-busy-check` | Rust | Hint: collection borrows in `ui.on_*` closures without a `busy` check |

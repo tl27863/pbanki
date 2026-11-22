@@ -66,6 +66,17 @@ export component MainWindow inherits Window {
     // Changes when a page that was not ready arrives (see `page-image`).
     in property <int> page-version;
 
+    // Card audio (`frontend/audio.rs`). `audio-supported`: the device can
+    // play sound at all. `audio-question` / `audio-answer`: the current card
+    // has sounds on that side and audio is on. `audio-playing` changes only
+    // when a clip starts or ends, so one e-ink update each.
+    in property <bool> audio-supported: false;
+    in property <bool> audio-question: false;
+    in property <bool> audio-answer: false;
+    in property <bool> audio-playing: false;
+    // A short line in the study top bar, e.g. that there is no audio output.
+    in property <string> audio-message;
+
     callback update_deck_tree();
     callback deck_clicked(deck: DeckNode);
     // The chevron of a deck row. Rust keeps the collapsed set.
@@ -88,6 +99,10 @@ export component MainWindow inherits Window {
     callback settings_back();
     callback edit_field(field: EditField, current: string);
     callback session_ended();
+    // The answer side was opened (button or key). Plays the answer's sounds.
+    callback answer_shown();
+    // The replay button: plays the current side's sounds, or stops them.
+    callback replay_audio();
 
     changed deck-rows-per-page => {
         deck_page_changed(0);
@@ -102,6 +117,7 @@ export component MainWindow inherits Window {
         device <=> device_settings;
         sync_state: sync_state;
         native-keyboard: native_keyboard;
+        audio-supported: audio-supported;
         back => {
             settings_back();
         }
@@ -199,6 +215,15 @@ export component MainWindow inherits Window {
         }
         study-key(key) => {
             study_key(key);
+        }
+        has-audio: show-answer ? audio-answer : audio-question;
+        audio-playing: audio-playing;
+        audio-message: audio-message;
+        answer-shown => {
+            answer_shown();
+        }
+        replay-audio => {
+            replay_audio();
         }
     }
 }

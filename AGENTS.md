@@ -13,9 +13,10 @@ The repository is a Cargo workspace with one `Cargo.lock` and one `target/`. The
   - `keys.rs` — hardware keys of the study screen: `KeyAction`, `KeyConfig`, the pure `resolve`.
   - `stats.rs` — deck statistics: `query` (worker), the pure `build` and `month_levels`.
   - `study.rs` — card loading and rating on the worker thread (`LoadedCard`, `next_card`, `rate_card`).
+  - `audio/` — card audio: `mod.rs` (`AudioPlayer`, the `pbanki-audio` thread, stall and unavailable handling), `decode.rs` (symphonia, resampling to 48 kHz stereo), `sink.rs` (ALSA through `libloading`, never mixer writes). See `notes/audio.md`.
   - `card_render/` — card pages rendered with Blitz: `mod.rs` (`CardRenderer`, the render thread), `html.rs` (card document, type-in and audio tags), `paginate.rs` (page breaks from line boxes), `raster.rs` (card fonts, media, pixels), `image_cache.rs` (decoded images, kept as PAM). See `notes/blitz-card-render.md`.
   - `sync/` — `mod.rs` (sync, full sync, media sync; they run on the job worker), `client.rs` (`SyncManager`), `auth.rs` (login, endpoint), `backup.rs` (backup before a full download).
-  - `frontend/` — Slint wiring: `mod.rs` (`FrontendHooks`, `init_ui`, `wire_callbacks`), `card_jobs.rs` (the collection job runner and the card jobs), `card_pages.rs` (page store for `page-image`), `decks.rs` (paged deck list), `study.rs`, `stats.rs`, `settings.rs` (sync and device settings), `sync.rs` (`SyncHooks`), `models.rs` (view models, deck paging, `SyncState` constructors).
+  - `frontend/` — Slint wiring: `mod.rs` (`FrontendHooks`, `init_ui`, `wire_callbacks`), `audio.rs` (`AudioSetup`, autoplay, replay, stop), `card_jobs.rs` (the collection job runner and the card jobs), `card_pages.rs` (page store for `page-image`), `decks.rs` (paged deck list), `study.rs`, `stats.rs`, `settings.rs` (sync and device settings), `sync.rs` (`SyncHooks`), `models.rs` (view models, deck paging, `SyncState` constructors).
   - `config.rs`, `fonts.rs`, `logging.rs` (log subscriber), `profile.rs`.
   - `ui/` — Slint sources: `screens/` (Home, Study, Settings with its Sync and Device tabs, Stats), `components/` (bars, buttons, pager, toggle, stepper, activity icon, loader), `icons/`, `theme.slint`, `constants.slint`, `types.slint`. Nothing scrolls.
 - `crates/pocketbook/` — package and binary `pbanki`, the PocketBook frontend over `inkview-rs`.
@@ -82,6 +83,7 @@ Dev sync server: `make -C ../pbanki-sync-server up`. The endpoint is `http://127
 | `notes/inkview-single-thread-pump.md` | Fallback design for InkView update stalls (not implemented) |
 | `notes/eink-presenter-refactor.md` | Blitz phase 1: the e-ink presenter moved out of inkview-slint into `inkview-eink` (done) |
 | `notes/blitz-card-render.md` | Blitz card pages in the study session: render thread, pagination, colors, audio placeholders |
+| `notes/audio.md` | Card audio: InkView and ALSA findings, the PB710 probe, playback design, devices without output, open device checks |
 | `notes/test-decks.md` | CSS bench deck, host render harness, render log analyzer |
 | `notes/card-loading.md` | Worker jobs, `busy`, loading screens, explicit redraws, hardware keys, the paged deck list |
 | `notes/sync.md` | Sync, Wi-Fi, sync hooks, dev sync server |
