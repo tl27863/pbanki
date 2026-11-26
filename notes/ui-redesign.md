@@ -261,6 +261,7 @@ On the PB710, not done yet:
 - The flashing refresh at 1, 5 and 10 cards.
 - Prev and Next arrive as expected, and Back does not leave the app unexpectedly.
 - The stats query time on a large deck.
+- Bury, suspend and Undo in the study top bar (`card-loading.md`, "Bury, suspend, and undo"): the time to the next card (a bury rebuilds the queues, so the loading icon shows often), that the icons keep their place from card to card, and that no rating gets an extra panel update from them.
 
 On the desktop, not done yet: eink-sim at 1404×1872 and 758×1024 (rows per page 14 and 7, name elision at 357 px, the Sync tab at 357×482), and a sync, a full upload and a full download against the dev sync server from the UI. The sync functions have tests against anki's server; in eink-sim a sync to a closed port ended on the error icon.
 

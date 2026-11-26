@@ -15,6 +15,9 @@ component StudyCount inherits Text {
     font-weight: 700;
     vertical-alignment: center;
     horizontal-alignment: right;
+    // The three counts keep their place from card to card, so the buttons
+    // beside them do not move with a changing digit count.
+    min-width: 36px;
 }
 
 export component LearnScreen {
@@ -36,6 +39,8 @@ export component LearnScreen {
     in property <bool> audio-playing: false;
     // Shown in the top bar, e.g. that there is no audio output.
     in property <string> audio-message;
+    // The last change was a bury or a suspend: the Undo button shows.
+    in property <bool> can-undo: false;
     // Both are reset from Rust before a new card is set, so the first frame
     // of a card already shows its question page 1.
     in-out property <bool> show_answer;
@@ -58,6 +63,9 @@ export component LearnScreen {
     pure callback page-image(answer: bool, page: int, version: int) -> image;
     callback answer-shown();
     callback replay-audio();
+    callback bury-card();
+    callback suspend-card();
+    callback undo-card-action();
 
     // Show answer opens the page with Anki's `#answer` marker, not page 1:
     // the answer usually repeats the question first.
@@ -114,6 +122,38 @@ export component LearnScreen {
                     enabled: !root.busy;
                     clicked => {
                         root.replay-audio();
+                    }
+                }
+
+                // Undo, bury and suspend. Their icons stay while a job runs
+                // (`keep-icon`): the start of a job is no panel update. Undo
+                // is the leftmost, so the others keep their place when it
+                // shows. Bury and suspend need a card, Undo does not (the
+                // last card of the deck can be undone).
+                if root.can-undo: IconButton {
+                    icon: @image-url("../icons/undo.svg");
+                    enabled: !root.busy;
+                    keep-icon: true;
+                    clicked => {
+                        root.undo-card-action();
+                    }
+                }
+
+                if valid_deck: IconButton {
+                    icon: @image-url("../icons/bury.svg");
+                    enabled: !root.busy;
+                    keep-icon: true;
+                    clicked => {
+                        root.bury-card();
+                    }
+                }
+
+                if valid_deck: IconButton {
+                    icon: @image-url("../icons/suspend.svg");
+                    enabled: !root.busy;
+                    keep-icon: true;
+                    clicked => {
+                        root.suspend-card();
                     }
                 }
 

@@ -31,6 +31,8 @@ export component MainWindow inherits Window {
     // The loading icon of the study top bar, while a rating loads the next
     // card.
     in-out property <bool> card-loading: false;
+    // The last change is a bury or a suspend (`study::CardAction`).
+    in-out property <bool> can-undo: false;
 
     // Home: one page of the deck list. Rust builds it (`frontend/decks.rs`)
     // from the rows that fit. The bars and rows have fixed heights, so the
@@ -103,6 +105,10 @@ export component MainWindow inherits Window {
     callback answer_shown();
     // The replay button: plays the current side's sounds, or stops them.
     callback replay_audio();
+    // The study top bar: bury and suspend the shown card, and undo of them.
+    callback bury_card();
+    callback suspend_card();
+    callback undo_card_action();
 
     changed deck-rows-per-page => {
         deck_page_changed(0);
@@ -224,6 +230,16 @@ export component MainWindow inherits Window {
         }
         replay-audio => {
             replay_audio();
+        }
+        can-undo: can-undo;
+        bury-card => {
+            bury_card();
+        }
+        suspend-card => {
+            suspend_card();
+        }
+        undo-card-action => {
+            undo_card_action();
         }
     }
 }

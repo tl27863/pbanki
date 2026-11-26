@@ -63,6 +63,19 @@ Rating:
 - If `answer_card` fails, `rate_card` returns an error card. It does not load the unchanged queue head. A test in `study.rs` covers this.
 - The app records `start_time` when it shows the card. Thus `milliseconds_taken` does not include load and render time.
 
+## Bury, suspend, and undo
+
+- The study top bar has three icon buttons: Undo (only while `MainWindow.can-undo`), Bury, Suspend. Order from the left: audio, Undo, Bury, Suspend, activity slot, counts. Everything to the left of Bury and Suspend can come and go, so they keep their place. The counts have a minimum width for the same reason.
+- They use the card job of a rating (`JobKind::Action`, `Loading::Deferred`) with `study::apply_card_action`: `bury_or_suspend_cards` with `Mode::BuryUser` or `Mode::Suspend`, or `undo()`, then `next_card`. `frontend/study.rs` has one `card_action` closure for the three callbacks. It returns while `busy`.
+- An action that changes nothing is an error (`0` cards changed: a missing card, or a card that is suspended already), like a rating that cannot be saved. Undo is an error unless the last undoable operation is a bury or a suspend (`undo_is_card_action`), so it never reverts a rating.
+- `LoadedCard::can_undo` comes from the collection (`undo_status`), so it is true after an Undo that leaves an earlier bury or suspend on the stack. `finish_job` sets `MainWindow.can-undo` from it, except for a deck entry. A rating makes the last operation an answer, so Undo goes away. A sync clears the undo history in Anki.
+- Burying the last card of the deck shows the "No more cards due!" message with the Undo button.
+- `IconButton.keep-icon` keeps the icon while the button is disabled. The three buttons use it, so a job start (for example a rating) does not blank them: no extra panel update. The `busy` check in Rust stops the second tap.
+- Bury is `BuryUser`: it ends at Anki's next-day rollover and does not bury siblings (deck-option sibling burying runs only when a card is answered). Suspend lasts until the card is unsuspended in Anki.
+- Bury and suspend clear the study queues in rslib (`maybe_clear_study_queues_after_op`), so the next card builds them again. It is slower than after a rating. Not measured on the PB710 yet.
+- These jobs do not count for `full_refresh_every` or for the `[card] lookahead` hit rate.
+- `card_pages::next_card_version` changes `page-version` for every new card (`show_new_card`). The card image binding depends on the side, the page and the version only. A bury or a suspend on the question side leaves all three as they were, so the old card's image stayed until this.
+
 ## Hardware keys
 
 - `learn.slint` only classifies the key: Left, Down and PageDown are Prev; Right, Up, PageUp, Return and Menu are Next. It calls the non-blocking `study_key(key)` callback.

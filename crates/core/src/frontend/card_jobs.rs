@@ -188,11 +188,22 @@ pub(super) enum Loading {
     Deferred(Duration),
 }
 
+/// What a card job is for. Only ratings count for the periodic full refresh
+/// and for the lookahead hit rate.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum JobKind {
+    DeckEntry,
+    Rating,
+    /// Bury, suspend, or undo of one of them (`study::apply_card_action`).
+    Action,
+}
+
 /// What `finish_job` needs on the UI thread.
 struct CardJob {
     ui: slint::Weak<MainWindow>,
     session: Rc<LearnSession>,
     deck: DeckNode,
+    kind: JobKind,
     full_transition: bool,
     hooks: FrontendHooks,
 }
@@ -205,6 +216,7 @@ pub(super) fn spawn_card_job<F>(
     session: Rc<LearnSession>,
     hooks: FrontendHooks,
     deck: DeckNode,
+    kind: JobKind,
     loading: Loading,
     operation: F,
 ) where
@@ -219,6 +231,7 @@ pub(super) fn spawn_card_job<F>(
         ui: ui.clone(),
         session: session.clone(),
         deck,
+        kind,
         full_transition,
         hooks: hooks.clone(),
     };
@@ -265,7 +278,12 @@ pub(super) fn spawn_card_job<F>(
 }
 
 fn finish_job(job: &CardJob, result: Result<LoadedCard, String>) {
-    let flash = full_refresh_due(&job.session, job.full_transition, result.is_ok());
+    let flash = full_refresh_due(&job.session, job.kind, result.is_ok());
+    // A deck entry starts a new session of work: its Undo would revert a
+    // bury from before it.
+    let can_undo = result
+        .as_ref()
+        .is_ok_and(|loaded| loaded.can_undo && job.kind != JobKind::DeckEntry);
     let card = match result {
         Ok(mut loaded) => {
             job.session.current_deck_id.set(Some(job.deck.id));
@@ -308,6 +326,7 @@ fn finish_job(job: &CardJob, result: Result<LoadedCard, String>) {
 
     if let Some(ui) = job.ui.upgrade() {
         show_new_card(&ui, card);
+        ui.set_can_undo(can_undo);
         ui.set_loading(false);
         ui.set_card_loading(false);
         if job.full_transition {
@@ -323,13 +342,14 @@ fn finish_job(job: &CardJob, result: Result<LoadedCard, String>) {
 
 /// Counts a rated card. True if the present of the next card must be the
 /// flashing full refresh (`full_refresh_every`, Settings > Device). A deck
-/// entry is a full present already, so it starts the count again.
-fn full_refresh_due(session: &LearnSession, deck_entry: bool, loaded: bool) -> bool {
-    if deck_entry {
+/// entry is a full present already, so it starts the count again. A bury or
+/// a suspend is not a rated card.
+fn full_refresh_due(session: &LearnSession, kind: JobKind, loaded: bool) -> bool {
+    if kind == JobKind::DeckEntry {
         session.rated_since_refresh.set(0);
         return false;
     }
-    if !loaded {
+    if !loaded || kind == JobKind::Action {
         return false;
     }
     let every = session.full_refresh_every.get();
@@ -353,7 +373,7 @@ fn log_lookahead(job: &CardJob, loaded: &LoadedCard) {
         &mut *job.session.predicted_next.borrow_mut(),
         loaded.predicted_next.clone(),
     );
-    if job.full_transition || loaded.id == -1 {
+    if job.kind != JobKind::Rating || loaded.id == -1 {
         return;
     }
     match predicted.iter().position(|&id| id == loaded.id) {
@@ -377,5 +397,6 @@ fn log_lookahead(job: &CardJob, loaded: &LoadedCard) {
 fn show_new_card(ui: &MainWindow, card: crate::CardNode) {
     ui.set_show_answer(false);
     ui.set_study_page(0);
+    ui.set_page_version(card_pages::next_card_version());
     ui.set_current_card(card);
 }

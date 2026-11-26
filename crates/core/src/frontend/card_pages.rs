@@ -53,6 +53,18 @@ pub(super) fn install(first: FirstPages) {
     STORE.with(|store| store.borrow_mut().install(first));
 }
 
+/// A `page-version` that differs from the one shown, for a new card. The
+/// binding of the card image depends on the side, the page and the version
+/// only. A new card on the same side and page (a bury or a suspend on the
+/// question side) would otherwise keep the image of the old card.
+pub(super) fn next_card_version() -> i32 {
+    STORE.with(|store| {
+        let mut store = store.borrow_mut();
+        store.version = store.version.wrapping_add(1);
+        store.version
+    })
+}
+
 /// No pages: the card area shows a message.
 pub(super) fn clear() {
     STORE.with(|store| {
@@ -60,6 +72,7 @@ pub(super) fn clear() {
         let renderer = store.renderer.take();
         *store = PageStore {
             renderer,
+            version: store.version,
             ..PageStore::default()
         };
     });

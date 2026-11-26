@@ -7,7 +7,9 @@ use slint::ComponentHandle;
 
 use super::FrontendHooks;
 use super::audio;
-use super::card_jobs::{DECK_LOADING_DELAY, Loading, RATING_LOADING_DELAY, spawn_card_job};
+use super::card_jobs::{
+    DECK_LOADING_DELAY, JobKind, Loading, RATING_LOADING_DELAY, spawn_card_job,
+};
 use super::decks;
 use super::sync::{SyncTrigger, end_finished_sync, schedule_sync};
 use crate::MainWindow;
@@ -15,7 +17,7 @@ use crate::card_render::{CardRenderer, RenderArea};
 use crate::config::Config;
 use crate::keys::{HwKey, Resolved, Side, resolve};
 use crate::session::LearnSession;
-use crate::study::{RenderContext, next_card, rate_card};
+use crate::study::{CardAction, RenderContext, apply_card_action, next_card, rate_card};
 
 /// What a card job needs to render pages for the current window.
 fn render_context(
@@ -128,6 +130,7 @@ pub(super) fn wire(
                 session.clone(),
                 hooks.clone(),
                 deck,
+                JobKind::Rating,
                 Loading::Deferred(RATING_LOADING_DELAY),
                 move |col| {
                     rate_card(
@@ -141,6 +144,58 @@ pub(super) fn wire(
     {
         let rate = rate.clone();
         ui.on_rate(move |rating, _deck| rate(rating));
+    }
+
+    // Bury, suspend, and undo of them: the same job as a rating, without a
+    // rating. The buttons stay visible while a job runs (no panel update at
+    // job start), so the `busy` check here is what stops a second tap.
+    let card_action: Rc<dyn Fn(CardAction)> = {
+        let ui_weak = ui.as_weak();
+        let session = session.clone();
+        let hooks = hooks.clone();
+        let renderer = renderer.clone();
+        Rc::new(move |action| {
+            if session.busy.get() {
+                return;
+            }
+            let Some(ui) = ui_weak.upgrade() else {
+                return;
+            };
+            // Undo also works on the "no more cards" message, where a bury
+            // of the last card left no current card.
+            let card_id = session.current_card.borrow().unwrap_or(-1);
+            if card_id == -1 && action != CardAction::Undo {
+                return;
+            }
+            let deck = ui.get_current_card().deck;
+            let deck_id = deck.id;
+            let set_deck = session.current_deck_id.get() != Some(deck_id);
+            let render = render_context(&ui, &session, &renderer, shadows);
+            audio::stop();
+
+            spawn_card_job(
+                ui_weak.clone(),
+                session.clone(),
+                hooks.clone(),
+                deck,
+                JobKind::Action,
+                Loading::Deferred(RATING_LOADING_DELAY),
+                move |col| apply_card_action(col, card_id, action, deck_id, set_deck, &render),
+            );
+        })
+    };
+
+    {
+        let card_action = card_action.clone();
+        ui.on_bury_card(move || card_action(CardAction::Bury));
+    }
+    {
+        let card_action = card_action.clone();
+        ui.on_suspend_card(move || card_action(CardAction::Suspend));
+    }
+    {
+        let card_action = card_action.clone();
+        ui.on_undo_card_action(move || card_action(CardAction::Undo));
     }
 
     {
@@ -227,6 +282,7 @@ pub(super) fn wire(
                 session.clone(),
                 hooks.clone(),
                 deck,
+                JobKind::DeckEntry,
                 Loading::Transition(DECK_LOADING_DELAY),
                 move |col| next_card(col, deck_id, set_deck, &render),
             );

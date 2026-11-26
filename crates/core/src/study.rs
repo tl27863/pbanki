@@ -48,10 +48,13 @@ pub struct LoadedCard {
     /// The cards after this one in the queue when it was loaded: the cards a
     /// render-ahead cache would prepare (notes/deep-research/card-page-cache.md).
     pub predicted_next: Vec<i64>,
+    /// The last change to the collection is a bury or a suspend, so the Undo
+    /// button shows (`apply_card_action`).
+    pub can_undo: bool,
 }
 
 impl LoadedCard {
-    fn no_cards(new_count: i32, learn_count: i32, due_count: i32) -> Self {
+    fn no_cards(new_count: i32, learn_count: i32, due_count: i32, can_undo: bool) -> Self {
         Self {
             id: -1,
             new_count,
@@ -65,8 +68,17 @@ impl LoadedCard {
             audio: AudioOptions::default(),
             queue_kind: String::new(),
             predicted_next: Vec::new(),
+            can_undo,
         }
     }
+}
+
+/// True if Undo would revert a bury or a suspend, and not a rating.
+fn undo_is_card_action(col: &Collection) -> bool {
+    matches!(
+        col.undo_status().undo,
+        Some(anki::ops::Op::Bury | anki::ops::Op::Suspend)
+    )
 }
 
 /// The audio options of a deck preset (Anki's deck options, "Audio").
@@ -164,7 +176,12 @@ pub fn next_card(
             "next card empty: set_deck={set_deck_elapsed:?} queue={queue_elapsed:?} total={:?}",
             total_timer.elapsed()
         );
-        return Ok(LoadedCard::no_cards(new_count, learn_count, due_count));
+        return Ok(LoadedCard::no_cards(
+            new_count,
+            learn_count,
+            due_count,
+            undo_is_card_action(col),
+        ));
     };
 
     let states_timer = ProfileTimer::start();
@@ -228,6 +245,7 @@ pub fn next_card(
             .iter()
             .map(|next| next.card.id().0)
             .collect(),
+        can_undo: undo_is_card_action(col),
     })
 }
 
@@ -401,6 +419,65 @@ pub fn rate_card(
     next_card(col, deck_id, set_deck, render)
 }
 
+/// What the top-bar buttons do to the shown card.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CardAction {
+    /// Hide the card until the next day (Anki's "Bury card").
+    Bury,
+    /// Take the card out of the queues until it is unsuspended.
+    Suspend,
+    /// Revert the last bury or suspend.
+    Undo,
+}
+
+/// Buries, suspends, or restores a card, then returns the next card. Runs on
+/// a worker thread.
+///
+/// An action that changes nothing is an error, like a rating that could not be
+/// saved: loading the unchanged queue head would show the same card again as
+/// if it had been dealt with. `Undo` reverts only a bury or a suspend, never a
+/// rating.
+#[allow(clippy::too_many_arguments)]
+pub fn apply_card_action(
+    col: &mut Collection,
+    card_id: i64,
+    action: CardAction,
+    deck_id: i64,
+    set_deck: bool,
+    render: &RenderContext,
+) -> Result<LoadedCard, String> {
+    use anki_proto::scheduler::bury_or_suspend_cards_request::Mode;
+
+    let timer = ProfileTimer::start();
+    let mode = match action {
+        CardAction::Bury => Some(Mode::BuryUser),
+        CardAction::Suspend => Some(Mode::Suspend),
+        CardAction::Undo => None,
+    };
+    match mode {
+        Some(mode) => {
+            let changed = col
+                .bury_or_suspend_cards(&[anki::card::CardId(card_id)], mode)
+                .map_err(|err| format!("could not change the card: {err}"))?
+                .output;
+            // Unknown ids and cards that are suspended already are skipped
+            // without an error.
+            if changed == 0 {
+                return Err("the card could not be buried or suspended".into());
+            }
+        }
+        None => {
+            if !undo_is_card_action(col) {
+                return Err("nothing to undo".into());
+            }
+            col.undo().map_err(|err| format!("could not undo: {err}"))?;
+        }
+    }
+    profile_log!("card {card_id} {action:?}: {:?}", timer.elapsed());
+
+    next_card(col, deck_id, set_deck, render)
+}
+
 #[allow(dead_code)]
 fn assert_worker_types_are_send() {
     fn assert_send<T: Send>() {}
@@ -441,19 +518,15 @@ mod tests {
         }
     }
 
-    /// A rating that cannot be saved must surface as an error instead of loading
-    /// the unchanged queue head as if it were the next card.
-    #[test]
-    fn rate_card_reports_failed_answer() {
-        let (dir, mut col) = temp_collection("rate");
-        let render = RenderContext {
+    fn test_render(dir: &std::path::Path) -> RenderContext {
+        RenderContext {
             fonts: FontCatalog::build("none", &[], &[]),
             renderer: CardRenderer::spawn(
                 crate::card_render::RendererConfig {
                     format: crate::card_render::PageFormat::Gray8,
                     font_files: Vec::new(),
                     font_families: Vec::new(),
-                    media_folder: dir.clone(),
+                    media_folder: dir.to_path_buf(),
                     image_cache: crate::card_render::ImageCacheSize::OFF,
                 },
                 Box::new(|_| {}),
@@ -464,7 +537,25 @@ mod tests {
                 scale: 1.0,
             },
             shadows: true,
-        };
+        }
+    }
+
+    fn add_notes(col: &mut Collection, count: usize) {
+        let basic = col.get_notetype_by_name("Basic").unwrap().unwrap();
+        for i in 0..count {
+            let mut note = basic.new_note();
+            note.set_field(0, format!("front {i}")).unwrap();
+            note.set_field(1, format!("back {i}")).unwrap();
+            col.add_note(&mut note, anki::decks::DeckId(1)).unwrap();
+        }
+    }
+
+    /// A rating that cannot be saved must surface as an error instead of loading
+    /// the unchanged queue head as if it were the next card.
+    #[test]
+    fn rate_card_reports_failed_answer() {
+        let (dir, mut col) = temp_collection("rate");
+        let render = test_render(&dir);
 
         let result = rate_card(&mut col, 424242, new_states(), 0, 2, 1, true, &render);
 
@@ -519,6 +610,109 @@ mod tests {
         // The answer still shows the question text.
         assert!(docs.html.answer.contains("word"));
         assert!(docs.html.answer.contains("meaning"));
+
+        drop(col);
+        let _ = fs::remove_dir_all(&dir);
+    }
+    /// Bury and suspend take the card out of the queue and load the next one;
+    /// Undo brings it back, and only a bury or a suspend can be undone.
+    #[test]
+    fn bury_suspend_and_undo_change_the_queue() {
+        let (dir, mut col) = temp_collection("actions");
+        add_notes(&mut col, 3);
+        let render = test_render(&dir);
+
+        let first = next_card(&mut col, 1, true, &render).unwrap();
+        assert_eq!(first.new_count, 3);
+        assert!(!first.can_undo);
+
+        let after_bury =
+            apply_card_action(&mut col, first.id, CardAction::Bury, 1, false, &render).unwrap();
+        assert_ne!(after_bury.id, first.id);
+        assert_eq!(after_bury.new_count, 2);
+        assert!(after_bury.can_undo);
+
+        let after_suspend = apply_card_action(
+            &mut col,
+            after_bury.id,
+            CardAction::Suspend,
+            1,
+            false,
+            &render,
+        )
+        .unwrap();
+        assert_ne!(after_suspend.id, after_bury.id);
+        assert_eq!(after_suspend.new_count, 1);
+
+        // Undo reverts the suspend first, then the bury.
+        let undone = apply_card_action(&mut col, -1, CardAction::Undo, 1, false, &render).unwrap();
+        assert_eq!(undone.new_count, 2);
+        assert!(undone.can_undo);
+        let undone = apply_card_action(&mut col, -1, CardAction::Undo, 1, false, &render).unwrap();
+        assert_eq!(undone.new_count, 3);
+        assert!(!undone.can_undo);
+
+        drop(col);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The last card of the deck can be buried, and then the message card
+    /// still offers Undo.
+    #[test]
+    fn burying_the_last_card_can_be_undone() {
+        let (dir, mut col) = temp_collection("last");
+        add_notes(&mut col, 1);
+        let render = test_render(&dir);
+
+        let card = next_card(&mut col, 1, true, &render).unwrap();
+        let empty =
+            apply_card_action(&mut col, card.id, CardAction::Bury, 1, false, &render).unwrap();
+        assert_eq!(empty.id, -1);
+        assert!(empty.can_undo);
+
+        let back = apply_card_action(&mut col, -1, CardAction::Undo, 1, false, &render).unwrap();
+        assert_eq!(back.id, card.id);
+
+        drop(col);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// An action that changes nothing is an error, and a rating is not undone
+    /// by the Undo button.
+    #[test]
+    fn card_actions_report_failures() {
+        let (dir, mut col) = temp_collection("failures");
+        add_notes(&mut col, 2);
+        let render = test_render(&dir);
+
+        for action in [CardAction::Bury, CardAction::Suspend] {
+            let err = apply_card_action(&mut col, 424242, action, 1, true, &render)
+                .err()
+                .expect("a missing card cannot be changed");
+            assert!(err.contains("could not be buried or suspended"), "{err}");
+        }
+        let err = apply_card_action(&mut col, -1, CardAction::Undo, 1, false, &render)
+            .err()
+            .expect("nothing to undo");
+        assert_eq!(err, "nothing to undo");
+
+        let card = next_card(&mut col, 1, true, &render).unwrap();
+        let rated = rate_card(
+            &mut col,
+            card.id,
+            card.states.clone().unwrap(),
+            0,
+            2,
+            1,
+            false,
+            &render,
+        )
+        .unwrap();
+        assert!(!rated.can_undo);
+        let err = apply_card_action(&mut col, -1, CardAction::Undo, 1, false, &render)
+            .err()
+            .expect("a rating is not undone");
+        assert_eq!(err, "nothing to undo");
 
         drop(col);
         let _ = fs::remove_dir_all(&dir);

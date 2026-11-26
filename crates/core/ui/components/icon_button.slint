@@ -1,17 +1,21 @@
 import { Constants } from "../constants.slint";
 
-// Icon with a 44x44 touch target. A disabled button shows no icon. No pressed, hover, or animated styles: each
-// would be an extra e-ink update (lint rule `pbanki-study-controls-no-states`).
+// Icon with a 44x44 touch target. A disabled button shows no icon, unless
+// `keep-icon` is set: then it only ignores taps. A button that shows on every
+// card keeps its icon while a job runs, so the start of the job is no extra
+// panel update. No pressed, hover, or animated styles: each would be an extra
+// e-ink update (lint rule `pbanki-study-controls-no-states`).
 export component IconButton {
     in property <image> icon;
     in property <bool> enabled: true;
+    in property <bool> keep-icon: false;
     callback clicked <=> touch.clicked;
     width: Constants.bar_height;
     height: Constants.bar_height;
 
     Image {
         source: root.icon;
-        visible: root.enabled;
+        visible: root.enabled || root.keep-icon;
         width: Constants.icon_size;
         height: Constants.icon_size;
     }
