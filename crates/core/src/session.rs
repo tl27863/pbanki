@@ -61,6 +61,10 @@ pub struct LearnSession {
     pub full_refresh_every: Cell<u32>,
     /// Cards rated since the last flashing full refresh or deck entry.
     pub rated_since_refresh: Cell<u32>,
+    /// Bury and suspend steps of this study session that Undo may still
+    /// revert (`card_jobs::undo_depth_after`). Rslib's undo stack also holds
+    /// the steps from before a deck entry, which Undo must not reach.
+    pub undo_depth: Cell<u32>,
     pub font_catalog: FontCatalog,
     /// Shared with the sync worker thread.
     pub sync_manager: Arc<SyncManager>,
@@ -120,6 +124,7 @@ pub fn init_session(config: &Config) -> Rc<LearnSession> {
         key_config: Cell::new(config.general.key_config()),
         full_refresh_every: Cell::new(config.general.full_refresh_every),
         rated_since_refresh: Cell::new(0),
+        undo_depth: Cell::new(0),
         font_catalog,
         sync_manager: Arc::new(SyncManager::new()),
     })
@@ -240,4 +245,6 @@ pub(crate) fn clear_current_card(session: &LearnSession) {
 pub(crate) fn reset_session_memory(session: &LearnSession) {
     clear_current_card(session);
     session.current_deck_id.set(None);
+    // A sync clears the undo history of the collection.
+    session.undo_depth.set(0);
 }

@@ -437,7 +437,6 @@ pub enum CardAction {
 /// saved: loading the unchanged queue head would show the same card again as
 /// if it had been dealt with. `Undo` reverts only a bury or a suspend, never a
 /// rating.
-#[allow(clippy::too_many_arguments)]
 pub fn apply_card_action(
     col: &mut Collection,
     card_id: i64,

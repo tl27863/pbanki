@@ -1,0 +1,38 @@
+id: pbanki-icon-keep-needs-busy
+valid:
+  - |
+    component A {
+        if x: IconButton {
+            icon: @image-url("a.svg");
+            enabled: !root.busy;
+            keep-icon: true;
+        }
+    }
+  - |
+    component A {
+        IconButton {
+            icon: @image-url("a.svg");
+            enabled: !root.busy;
+        }
+    }
+  - |
+    component A {
+        IconButton {
+            keep-icon: false;
+        }
+    }
+invalid:
+  - |
+    component A {
+        IconButton {
+            icon: @image-url("a.svg");
+            keep-icon: true;
+        }
+    }
+  - |
+    component A {
+        if x: IconButton {
+            enabled: x;
+            keep-icon: true;
+        }
+    }

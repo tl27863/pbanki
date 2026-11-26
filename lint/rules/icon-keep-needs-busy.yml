@@ -1,0 +1,29 @@
+id: pbanki-icon-keep-needs-busy
+language: slint
+severity: error
+message: "An IconButton with `keep-icon: true` must also have `enabled: !root.busy`."
+note: |
+  `keep-icon` keeps the icon visible while the button is disabled, so a job
+  start (for example a rating) does not blank it and cost a panel update. The
+  button is then the only thing that stops a tap during the job, so it must be
+  disabled while `busy` (and its Rust callback checks `session.busy` too). See
+  `notes/card-loading.md`, "Bury, suspend, and undo".
+files:
+  - crates/core/ui/**/*.slint
+rule:
+  kind: component
+  has:
+    field: type
+    regex: ^IconButton$
+  all:
+    - has:
+        kind: block
+        has:
+          kind: property_assignment
+          regex: ^keep-icon:\s*true;$
+    - not:
+        has:
+          kind: block
+          has:
+            kind: property_assignment
+            regex: ^enabled:\s*!root\.busy;$

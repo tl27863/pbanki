@@ -17,7 +17,7 @@ use super::{audio, card_pages};
 use crate::profile::ProfileTimer;
 use crate::profile_log;
 use crate::session::{LearnSession, clear_current_card, reset_session_memory};
-use crate::study::{CardContent, LoadedCard};
+use crate::study::{CardAction, CardContent, LoadedCard};
 use crate::{DeckNode, MainWindow};
 
 /// Delay before a deck entry shows its loading screen. Loads that finish
@@ -195,7 +195,23 @@ pub(super) enum JobKind {
     DeckEntry,
     Rating,
     /// Bury, suspend, or undo of one of them (`study::apply_card_action`).
-    Action,
+    Action(CardAction),
+}
+
+/// The number of bury and suspend steps of this study session that Undo may
+/// still revert, after a job of `kind` has finished.
+///
+/// The undo stack of rslib also holds the steps from before the deck entry
+/// (the entry adds no step when the deck stays the same). Undo must not reach
+/// them, so the session counts its own: a deck entry starts at 0, a bury or a
+/// suspend adds one, an Undo takes one off. A rating puts an answer on top of
+/// the stack, and nothing under it can be reached any more.
+pub(super) fn undo_depth_after(kind: JobKind, depth: u32) -> u32 {
+    match kind {
+        JobKind::DeckEntry | JobKind::Rating => 0,
+        JobKind::Action(CardAction::Undo) => depth.saturating_sub(1),
+        JobKind::Action(CardAction::Bury | CardAction::Suspend) => depth.saturating_add(1),
+    }
 }
 
 /// What `finish_job` needs on the UI thread.
@@ -279,11 +295,16 @@ pub(super) fn spawn_card_job<F>(
 
 fn finish_job(job: &CardJob, result: Result<LoadedCard, String>) {
     let flash = full_refresh_due(&job.session, job.kind, result.is_ok());
-    // A deck entry starts a new session of work: its Undo would revert a
-    // bury from before it.
-    let can_undo = result
-        .as_ref()
-        .is_ok_and(|loaded| loaded.can_undo && job.kind != JobKind::DeckEntry);
+    // Undo shows only while this session has a bury or a suspend to revert,
+    // and the collection says that the last step is one (`can_undo`). A failed
+    // job resets the session memory, which also clears the depth.
+    let undo_depth = if result.is_ok() {
+        undo_depth_after(job.kind, job.session.undo_depth.get())
+    } else {
+        0
+    };
+    job.session.undo_depth.set(undo_depth);
+    let can_undo = undo_depth > 0 && result.as_ref().is_ok_and(|loaded| loaded.can_undo);
     let card = match result {
         Ok(mut loaded) => {
             job.session.current_deck_id.set(Some(job.deck.id));
@@ -349,7 +370,7 @@ fn full_refresh_due(session: &LearnSession, kind: JobKind, loaded: bool) -> bool
         session.rated_since_refresh.set(0);
         return false;
     }
-    if !loaded || kind == JobKind::Action {
+    if !loaded || matches!(kind, JobKind::Action(_)) {
         return false;
     }
     let every = session.full_refresh_every.get();
@@ -399,4 +420,34 @@ fn show_new_card(ui: &MainWindow, card: crate::CardNode) {
     ui.set_study_page(0);
     ui.set_page_version(card_pages::next_card_version());
     ui.set_current_card(card);
+}
+
+#[cfg(test)]
+mod undo_depth_tests {
+    use super::*;
+
+    /// A bury from before a deck entry stays out of reach: after the entry,
+    /// Undo only goes back as far as the steps of the new session.
+    #[test]
+    fn undo_does_not_reach_steps_from_before_the_deck_entry() {
+        let mut depth = undo_depth_after(JobKind::Action(CardAction::Bury), 0);
+        assert_eq!(depth, 1);
+
+        depth = undo_depth_after(JobKind::DeckEntry, depth);
+        assert_eq!(depth, 0);
+
+        depth = undo_depth_after(JobKind::Action(CardAction::Bury), depth);
+        assert_eq!(depth, 1);
+        depth = undo_depth_after(JobKind::Action(CardAction::Undo), depth);
+        assert_eq!(depth, 0, "the older bury is not undoable");
+        depth = undo_depth_after(JobKind::Action(CardAction::Undo), depth);
+        assert_eq!(depth, 0);
+    }
+
+    #[test]
+    fn a_rating_ends_the_undo_of_earlier_steps() {
+        let depth = undo_depth_after(JobKind::Action(CardAction::Suspend), 1);
+        assert_eq!(depth, 2);
+        assert_eq!(undo_depth_after(JobKind::Rating, depth), 0);
+    }
 }

@@ -126,10 +126,11 @@ export component LearnScreen {
                 }
 
                 // Undo, bury and suspend. Their icons stay while a job runs
-                // (`keep-icon`): the start of a job is no panel update. Undo
-                // is the leftmost, so the others keep their place when it
-                // shows. Bury and suspend need a card, Undo does not (the
-                // last card of the deck can be undone).
+                // (`keep-icon`): the start of a job is no panel update. The
+                // row is end-aligned, so Bury and Suspend keep their place
+                // when the audio button or Undo comes and goes on their left.
+                // Bury and suspend need a card, Undo does not (the last card
+                // of the deck can be undone).
                 if root.can-undo: IconButton {
                     icon: @image-url("../icons/undo.svg");
                     enabled: !root.busy;

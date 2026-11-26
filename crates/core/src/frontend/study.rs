@@ -167,6 +167,10 @@ pub(super) fn wire(
             if card_id == -1 && action != CardAction::Undo {
                 return;
             }
+            // Only this study session's own bury and suspend steps.
+            if action == CardAction::Undo && session.undo_depth.get() == 0 {
+                return;
+            }
             let deck = ui.get_current_card().deck;
             let deck_id = deck.id;
             let set_deck = session.current_deck_id.get() != Some(deck_id);
@@ -178,7 +182,7 @@ pub(super) fn wire(
                 session.clone(),
                 hooks.clone(),
                 deck,
-                JobKind::Action,
+                JobKind::Action(action),
                 Loading::Deferred(RATING_LOADING_DELAY),
                 move |col| apply_card_action(col, card_id, action, deck_id, set_deck, &render),
             );

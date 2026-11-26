@@ -23,6 +23,7 @@ The rules check invariants that clippy cannot check.
 | `pbanki-show-new-card` | Rust | A new card goes through `show_new_card` (resets the page state first), not `set_current_card` |
 | `pbanki-no-focus-in-init` | Slint | No `focus()` in `init` |
 | `pbanki-study-controls-no-states` | Slint | No `states`, `transitions`, `animate`, `.pressed`, or `.has-hover` in `plain_button.slint`, `rating_button.slint`, `icon_button.slint`, and `key_glyph.slint` |
+| `pbanki-icon-keep-needs-busy` | Slint | An `IconButton` with `keep-icon: true` also has `enabled: !root.busy` |
 | `pbanki-no-scroll-widgets` | Slint | No `ListView`, `ScrollView`, or `Flickable` in `crates/core/ui/`. Lists paginate |
 | `pbanki-no-slint-color-literal` | Slint | No color literals outside `ui/theme.slint`. Use a `Theme` token |
 
