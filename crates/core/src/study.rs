@@ -646,9 +646,14 @@ mod tests {
         // Undo reverts the suspend first, then the bury.
         let undone = apply_card_action(&mut col, -1, CardAction::Undo, 1, false, &render).unwrap();
         assert_eq!(undone.new_count, 2);
+        assert_eq!(
+            undone.id, after_bury.id,
+            "the suspended card is the head again"
+        );
         assert!(undone.can_undo);
         let undone = apply_card_action(&mut col, -1, CardAction::Undo, 1, false, &render).unwrap();
         assert_eq!(undone.new_count, 3);
+        assert_eq!(undone.id, first.id, "the buried card is the head again");
         assert!(!undone.can_undo);
 
         drop(col);
